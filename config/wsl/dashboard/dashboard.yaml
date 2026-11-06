@@ -1,0 +1,5 @@
+# SOC analyst dashboard. See docs/operations/dashboard.md. Unset values take the defaults in dashboard/siem_dashboard/config.py.
+# Loopback only. WSL forwards this port to the Windows host's own loopback, and to nothing else.
+listen:
+  host: 127.0.0.1
+  port: 8443

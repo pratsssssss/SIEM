@@ -1,0 +1,42 @@
+[Unit]
+Description=SIEM analyst dashboard
+# Nothing depends on this. It starts after the rest of the stack only so that its first screens have data.
+After=opensearch.service siem-correlator.service siem-asset.service siem-path.service
+PartOf=siem.target
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-dashboard
+Group=siem-dashboard
+# Opens the incident, asset and path sockets, and reads the health state. It holds neither administrator group.
+SupplementaryGroups=siem-analyst
+ExecStart=/usr/local/bin/siem-dashboard
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=15
+UMask=0077
+MemoryMax=192M
+CPUQuota=50%
+Nice=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/dashboard
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=siem.target
