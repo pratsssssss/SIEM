@@ -1,0 +1,106 @@
+SIEM Lab, Version 1
+Copyright (c) 2026 pratsssssss
+
+This project's own code, configuration and documentation are released under the
+MIT License (see LICENSE). The MIT License does not cover the third-party data,
+names, trademarks or software listed below. Each keeps its own licence and terms.
+
+
+1. IP geolocation data: DB-IP
+-----------------------------
+
+IP Geolocation by DB-IP (https://db-ip.com)
+
+The enrichment service downloads the free DB-IP Lite city and ASN databases
+at run time. No DB-IP data is included in this repository. DB-IP Lite is
+licensed under the Creative Commons Attribution 4.0 International License
+(https://creativecommons.org/licenses/by/4.0/), which requires attribution to
+DB-IP.com. DB-IP's terms also require a link back to https://db-ip.com on any
+web page that displays or uses results from the database. The Version 1
+dashboard does not display geolocation results. Any page that does must carry
+the link: <a href='https://db-ip.com'>IP Geolocation by DB-IP</a>
+
+
+2. MITRE ATT&CK
+---------------
+
+Detection rules and the attack-path engine refer to MITRE ATT&CK technique and
+tactic identifiers, and the attack-path engine includes ATT&CK technique names.
+
+© 2026 The MITRE Corporation. This work is reproduced and distributed with the
+permission of The MITRE Corporation.
+
+Licence, as stated in the MITRE ATT&CK Terms of Use
+(https://attack.mitre.org/resources/legal-and-branding/terms-of-use/):
+"The MITRE Corporation (MITRE) hereby grants you a non-exclusive, royalty-free
+license to use ATT&CK® for research, development, and commercial purposes. Any
+copy you make for such purposes is authorized provided that you reproduce
+MITRE's copyright designation and this license in any such copy."
+
+MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.
+This project is not affiliated with or endorsed by MITRE. As the Terms of Use
+state, ATT&CK does not enumerate all possible adversary behaviours, and using it
+does not guarantee full defensive coverage. ATT&CK information is provided by
+MITRE "as is", without warranty of any kind.
+
+
+3. Sigma
+--------
+
+The Sigma rules in rules/sigma/ were written for this project, in the Sigma rule
+format, and are released under this project's MIT License. No rules from the
+SigmaHQ rule repository are included, so its Detection Rule License does not
+apply to them.
+
+
+4. Threat-intelligence feeds and providers
+------------------------------------------
+
+The enrichment service downloads public feeds at run time, and no feed data is
+included in this repository. The feeds are abuse.ch Feodo Tracker, Proofpoint
+Emerging Threats compromised IPs, CINS Army, blocklist.de, Spamhaus DROP,
+OpenPhish community feed, Phishing Army, the Tor Project exit list, and the
+published AWS and Google Cloud address ranges. Optional providers (AbuseIPDB,
+VirusTotal, AlienVault OTX, abuse.ch and CIRCL hashlookup) are off unless the
+operator configures them with their own keys. Each feed and provider has its
+own terms of use, including limits on commercial use for some of them, and
+those terms apply to whoever runs this software.
+
+
+5. Software used but not included
+---------------------------------
+
+None of the following is included in this repository. The installers expect
+the operator to obtain each one from its publisher, and verify it.
+
+  Vector 0.61.0                Mozilla Public License 2.0
+  Apache Kafka 4.4.0           Apache License 2.0
+  OpenSearch 3.9.0             Apache License 2.0
+  Microsoft Sysmon             Sysinternals Software License Terms; the
+                               operator must accept its EULA on install
+
+Python packages, installed from hash-pinned wheels listed in each
+requirements.lock. Licences are as declared in each wheel's metadata:
+
+  certifi 2026.10.23            MPL-2.0
+  charset-normalizer 3.5.2      MIT
+  confluent-kafka 2.16.1        Apache-2.0
+  diskcache 5.6.3               Apache-2.0
+  idna 3.20                     BSD-3-Clause
+  Jinja2 3.1.6                  BSD-3-Clause
+  jq 1.13.0                     BSD-2-Clause
+  MarkupSafe 3.0.4              BSD-3-Clause
+  maxminddb 3.2.0               Apache-2.0
+  packaging 26.3                Apache-2.0 OR BSD-2-Clause
+  pyparsing 3.3.3               MIT
+  pySigma 1.5.1                 LGPL-2.1-only (used unmodified, as a separately
+                                installed library)
+  PyYAML 6.0.3                  MIT
+  requests 2.34.2               Apache-2.0
+  typing_extensions 4.16.0      PSF-2.0
+  urllib3 2.8.0                 MIT
+
+The Go seal verifier uses only the Go standard library.
+
+The dashboard bundles no third-party code, fonts or icons. It names system
+fonts in its stylesheet, and its icon was drawn for this project.
