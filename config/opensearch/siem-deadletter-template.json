@@ -1,0 +1,26 @@
+{
+  "index_patterns": ["siem-deadletter-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index.number_of_shards": 1,
+      "index.number_of_replicas": 0,
+      "index.refresh_interval": "10s",
+      "index.codec": "best_compression",
+      "index.mapping.ignore_malformed": true
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "timestamp": {"type": "date"},
+        "dlq": {"properties": {"reason": {"type": "keyword"}, "raw_sha256": {"type": "keyword"}, "raw_length": {"type": "long"}}},
+        "kafka": {"properties": {"topic": {"type": "keyword"}, "partition": {"type": "integer"}, "offset": {"type": "long"}}},
+        "channel": {"type": "keyword"},
+        "event_id": {"type": "keyword"},
+        "record_id": {"type": "keyword"},
+        "event_uid": {"type": "keyword"},
+        "sealed": {"type": "text", "index": false}
+      }
+    }
+  }
+}

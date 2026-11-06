@@ -1,0 +1,30 @@
+# Single-node SIEM store. Localhost only. See docs/operations/opensearch-deployment.md.
+cluster.name: siem-lab
+node.name: siem-node-1
+
+path.data: /home/linux/siem/data/opensearch
+path.logs: /var/log/opensearch
+
+network.host: 127.0.0.1
+http.port: 9200
+transport.port: 9300
+discovery.type: single-node
+cluster.default_number_of_replicas: 0
+
+bootstrap.memory_lock: true
+
+plugins.security.disabled: false
+plugins.security.ssl.transport.pemcert_filepath: /etc/opensearch/node.pem
+plugins.security.ssl.transport.pemkey_filepath: /etc/opensearch/node-key.pem
+plugins.security.ssl.transport.pemtrustedcas_filepath: /etc/opensearch/root-ca.pem
+plugins.security.ssl.http.enabled: true
+plugins.security.ssl.http.pemcert_filepath: /etc/opensearch/node.pem
+plugins.security.ssl.http.pemkey_filepath: /etc/opensearch/node-key.pem
+plugins.security.ssl.http.pemtrustedcas_filepath: /etc/opensearch/root-ca.pem
+plugins.security.allow_default_init_securityindex: true
+plugins.security.authcz.admin_dn:
+  - "CN=siem-admin,OU=OpenSearch,O=SIEMLab"
+plugins.security.nodes_dn:
+  - "CN=localhost,OU=OpenSearch,O=SIEMLab"
+plugins.security.restapi.roles_enabled: ["all_access", "security_rest_api_access"]
+plugins.security.audit.type: internal_opensearch

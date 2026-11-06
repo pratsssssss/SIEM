@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Deletes alert evidence indices 90 days after creation. Alert indices are monthly, and outlive the events they cite. Matches nothing else.",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [{"state_name": "delete", "conditions": {"min_index_age": "90d"}}]
+      },
+      {
+        "name": "delete",
+        "actions": [{"delete": {}}],
+        "transitions": []
+      }
+    ],
+    "ism_template": [{"index_patterns": ["siem-alerts-*"], "priority": 100}]
+  }
+}

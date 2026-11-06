@@ -1,0 +1,40 @@
+{
+  "index_patterns": ["siem-asset-relationships", "siem-asset-history-*", "siem-asset-audit-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "10s", "codec": "best_compression"}
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "schema_version": {"type": "integer"},
+        "seq": {"type": "long"},
+        "at": {"type": "date"},
+        "asset_id": {"type": "keyword"},
+        "kind": {"type": "keyword"},
+        "category": {"type": "keyword"},
+        "subject": {"type": "keyword", "ignore_above": 256},
+        "before": {"type": "object", "enabled": false},
+        "after": {"type": "object", "enabled": false},
+        "class": {"type": "keyword"},
+        "provenance": {"type": "keyword"},
+        "previous": {"type": "keyword"},
+        "hash": {"type": "keyword"},
+        "ts_ms": {"type": "date", "format": "epoch_millis"},
+        "actor": {"type": "keyword"},
+        "action": {"type": "keyword"},
+        "detail": {"type": "object", "enabled": false},
+        "id": {"type": "keyword"},
+        "type": {"type": "keyword"},
+        "source": {"properties": {"type": {"type": "keyword"}, "id": {"type": "keyword"}}},
+        "target": {"properties": {"type": {"type": "keyword"}, "id": {"type": "keyword"}}},
+        "first_seen": {"type": "date"},
+        "last_seen": {"type": "date"},
+        "confidence": {"type": "keyword"},
+        "basis": {"type": "keyword"},
+        "count": {"type": "long"}
+      }
+    }
+  }
+}

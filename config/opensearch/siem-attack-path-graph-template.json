@@ -1,0 +1,130 @@
+{
+  "index_patterns": [
+    "siem-attack-path-graph-*"
+  ],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0,
+        "refresh_interval": "10s",
+        "codec": "best_compression"
+      }
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer"
+        },
+        "doc_type": {
+          "type": "keyword"
+        },
+        "path_id": {
+          "type": "keyword"
+        },
+        "at": {
+          "type": "date"
+        },
+        "id": {
+          "type": "keyword"
+        },
+        "type": {
+          "type": "keyword"
+        },
+        "key": {
+          "type": "keyword"
+        },
+        "display": {
+          "type": "keyword"
+        },
+        "asset_id": {
+          "type": "keyword"
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "platform": {
+          "type": "keyword"
+        },
+        "quality": {
+          "type": "keyword"
+        },
+        "source": {
+          "type": "keyword"
+        },
+        "target": {
+          "type": "keyword"
+        },
+        "class": {
+          "type": "keyword"
+        },
+        "basis": {
+          "type": "keyword"
+        },
+        "tier": {
+          "type": "keyword"
+        },
+        "state": {
+          "type": "keyword"
+        },
+        "first_seen": {
+          "type": "date"
+        },
+        "last_seen": {
+          "type": "date"
+        },
+        "reason": {
+          "type": "text",
+          "index": false
+        },
+        "supporting": {
+          "type": "object",
+          "enabled": false
+        },
+        "contradicting": {
+          "type": "object",
+          "enabled": false
+        },
+        "evidence": {
+          "type": "object",
+          "enabled": false
+        },
+        "sid": {
+          "type": "keyword"
+        },
+        "role": {
+          "type": "keyword"
+        },
+        "status": {
+          "type": "keyword"
+        },
+        "scope": {
+          "type": "keyword"
+        },
+        "severity": {
+          "type": "keyword"
+        },
+        "rule_id": {
+          "type": "keyword"
+        },
+        "verdict": {
+          "type": "keyword"
+        },
+        "identity_confidence": {
+          "type": "keyword"
+        },
+        "criticality": {
+          "type": "keyword"
+        },
+        "owner": {
+          "type": "keyword"
+        },
+        "ambiguous": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

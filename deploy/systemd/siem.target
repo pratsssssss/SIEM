@@ -1,0 +1,7 @@
+# Started deliberately by deploy/windows/siem-up.ps1. Never enable this at boot.
+# Stopping this target returns before its services finish. Stop services by name first.
+# Optional add-ons are not named here. Each one's installer enables its unit, which carries WantedBy=siem.target.
+[Unit]
+Description=SIEM stack
+Wants=opensearch.service kafka.service seal-verifier.service vector.service siem-detector.service siem-enricher.service siem-correlator.service siem-asset.service siem-path.service siem-health.service siem-health-watchdog.timer siem-dashboard.service siem-linux-agent.service siem-linux-health.timer siem-kafka-expiry-check.timer siem-disk-guard.timer siem-enricher-feeds.timer
+After=opensearch.service kafka.service

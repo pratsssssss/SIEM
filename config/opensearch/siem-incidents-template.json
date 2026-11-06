@@ -1,0 +1,47 @@
+{
+  "index_patterns": ["siem-incidents-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "10s", "codec": "best_compression"}
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "schema_version": {"type": "integer"},
+        "incident_id": {"type": "keyword"},
+        "title": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
+        "description": {"type": "text"},
+        "status": {"type": "keyword"},
+        "revision": {"type": "integer"},
+        "severity": {"type": "keyword"},
+        "confidence": {"type": "integer"},
+        "confidence_level": {"type": "keyword"},
+        "first_seen": {"type": "date"},
+        "last_seen": {"type": "date"},
+        "created_at": {"type": "date"},
+        "updated_at": {"type": "date"},
+        "hosts": {"type": "keyword"},
+        "users": {"type": "keyword"},
+        "ips": {"type": "keyword"},
+        "domains": {"type": "keyword"},
+        "processes": {"type": "keyword"},
+        "file_hashes": {"type": "keyword"},
+        "entity_ids": {"type": "keyword"},
+        "alert_ids": {"type": "keyword"},
+        "signal_ids": {"type": "keyword"},
+        "source_event_ids": {"type": "keyword"},
+        "raw_event_refs": {"type": "keyword"},
+        "alert_refs": {"type": "keyword"},
+        "enrichment_refs": {"type": "keyword"},
+        "rules": {"properties": {"id": {"type": "keyword"}, "title": {"type": "keyword"}, "join": {"type": "keyword"}}},
+        "indicators": {"properties": {"type": {"type": "keyword"}, "value": {"type": "keyword", "ignore_above": 2048}, "verdict": {"type": "keyword"}, "score": {"type": "integer"}}},
+        "uncertain": {"type": "text"},
+        "timeline": {"type": "object", "enabled": false},
+        "correlations": {"type": "object", "enabled": false},
+        "notes": {"type": "object", "enabled": false},
+        "explanation": {"type": "object", "enabled": false}
+      }
+    }
+  }
+}

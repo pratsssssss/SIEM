@@ -1,0 +1,42 @@
+{
+  "index_patterns": ["siem-assets-current"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "10s", "codec": "best_compression"}
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "schema_version": {"type": "integer"},
+        "asset_id": {"type": "keyword"},
+        "hostname": {"type": "keyword"},
+        "aliases": {"type": "keyword"},
+        "asset_type": {"type": "keyword"},
+        "platform": {"type": "keyword"},
+        "status": {"type": "keyword"},
+        "identity_confidence": {"type": "keyword"},
+        "merged_into": {"type": "keyword"},
+        "ips": {"type": "ip"},
+        "security_tools": {"type": "keyword"},
+        "os": {"properties": {"name": {"type": "keyword"}, "version": {"type": "keyword"}, "build": {"type": "keyword"}, "arch": {"type": "keyword"}}},
+        "owner": {"type": "keyword"},
+        "department": {"type": "keyword"},
+        "environment": {"type": "keyword"},
+        "location": {"type": "keyword"},
+        "criticality": {"type": "keyword"},
+        "purpose": {"type": "text"},
+        "tags": {"type": "keyword"},
+        "first_seen": {"type": "date"},
+        "last_seen": {"type": "date"},
+        "last_inventory_update": {"type": "date"},
+        "last_successful_collection": {"type": "date"},
+        "updated_at": {"type": "date"},
+        "discovery_source": {"type": "keyword"},
+        "open_conflicts": {"type": "integer"},
+        "vulnerability_status": {"type": "keyword"},
+        "counts": {"type": "object", "enabled": false}
+      }
+    }
+  }
+}

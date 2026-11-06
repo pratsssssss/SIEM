@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Deletes asset history and asset audit indices 365 days after creation. The current inventory and relationship indices are not matched, so an asset is never removed for going quiet.",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [{"state_name": "delete", "conditions": {"min_index_age": "365d"}}]
+      },
+      {
+        "name": "delete",
+        "actions": [{"delete": {}}],
+        "transitions": []
+      }
+    ],
+    "ism_template": [{"index_patterns": ["siem-asset-history-*", "siem-asset-audit-*"], "priority": 100}]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Deletes enrichment result indices 90 days after creation, matching the alert evidence they describe. Matches nothing else.",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [{"state_name": "delete", "conditions": {"min_index_age": "90d"}}]
+      },
+      {
+        "name": "delete",
+        "actions": [{"delete": {}}],
+        "transitions": []
+      }
+    ],
+    "ism_template": [{"index_patterns": ["siem-enrichment-*"], "priority": 100}]
+  }
+}

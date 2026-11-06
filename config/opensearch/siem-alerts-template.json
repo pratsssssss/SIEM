@@ -1,0 +1,33 @@
+{
+  "index_patterns": ["siem-alerts-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "10s", "codec": "best_compression"}
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "schema_version": {"type": "integer"},
+        "alert_id": {"type": "keyword"},
+        "rule_id": {"type": "keyword"},
+        "rule_name": {"type": "keyword"},
+        "detection_type": {"type": "keyword"},
+        "severity": {"type": "keyword"},
+        "confidence": {"type": "keyword"},
+        "timestamp": {"type": "date"},
+        "detected_at": {"type": "date"},
+        "description": {"type": "text"},
+        "host": {"type": "keyword"},
+        "user": {"type": "keyword"},
+        "source_ip": {"type": "keyword"},
+        "event_count": {"type": "integer"},
+        "source_event_ids": {"type": "keyword"},
+        "raw_event_refs": {"type": "keyword"},
+        "mitre": {"properties": {"tactics": {"type": "keyword"}, "techniques": {"type": "keyword"}}},
+        "evidence": {"type": "object", "enabled": false},
+        "evidence_ref": {"type": "keyword"}
+      }
+    }
+  }
+}

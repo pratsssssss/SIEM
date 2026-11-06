@@ -1,0 +1,67 @@
+{
+  "index_patterns": ["siem-enrichment-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "10s", "codec": "best_compression"}
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "schema_version": {"type": "integer"},
+        "doc_type": {"type": "keyword"},
+        "alert_id": {"type": "keyword"},
+        "alert_ref": {"type": "keyword"},
+        "rule_id": {"type": "keyword"},
+        "rule_name": {"type": "keyword"},
+        "alert_severity": {"type": "keyword"},
+        "event_id": {"type": "keyword"},
+        "event_index": {"type": "keyword"},
+        "host": {"type": "keyword"},
+        "@timestamp": {"type": "date"},
+        "status": {"type": "keyword"},
+        "enriched_at": {"type": "date"},
+        "events_available": {"type": "integer"},
+        "source_event_ids": {"type": "keyword"},
+        "raw_event_refs": {"type": "keyword"},
+        "summary": {"properties": {
+          "highest_verdict": {"type": "keyword"},
+          "indicator_count": {"type": "integer"},
+          "max_score": {"type": "integer"},
+          "by_verdict": {"type": "object", "enabled": false}
+        }},
+        "threat": {"properties": {"enrichments": {"properties": {
+          "indicator": {"properties": {
+            "type": {"type": "keyword"},
+            "ip": {"type": "ip"},
+            "provider": {"type": "keyword"},
+            "confidence": {"type": "keyword"},
+            "url": {"properties": {"domain": {"type": "keyword"}, "original": {"type": "keyword", "ignore_above": 2048}}},
+            "file": {"properties": {"hash": {"properties": {"sha256": {"type": "keyword"}}}}}
+          }},
+          "matched": {"properties": {
+            "atomic": {"type": "keyword", "ignore_above": 2048},
+            "field": {"type": "keyword"},
+            "id": {"type": "keyword"},
+            "index": {"type": "keyword"},
+            "type": {"type": "keyword"}
+          }}
+        }}}},
+        "indicators": {"properties": {
+          "type": {"type": "keyword"},
+          "value": {"type": "keyword", "ignore_above": 2048},
+          "field": {"type": "keyword"},
+          "verdict": {"type": "keyword"},
+          "score": {"type": "integer"},
+          "from_restricted_text": {"type": "boolean"},
+          "external_checked": {"type": "boolean"},
+          "complete": {"type": "boolean"},
+          "reasons": {"type": "keyword", "index": false, "doc_values": false},
+          "sources": {"type": "object", "enabled": false},
+          "context": {"type": "object", "enabled": false}
+        }},
+        "untrusted_notice": {"type": "keyword", "index": false, "doc_values": false}
+      }
+    }
+  }
+}

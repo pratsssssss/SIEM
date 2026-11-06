@@ -1,0 +1,38 @@
+{
+  "policy": {
+    "description": "Deletes attack path, graph, history and audit indices 365 days after creation, matching incidents. Matches nothing else.",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [
+          {
+            "state_name": "delete",
+            "conditions": {
+              "min_index_age": "365d"
+            }
+          }
+        ]
+      },
+      {
+        "name": "delete",
+        "actions": [
+          {
+            "delete": {}
+          }
+        ],
+        "transitions": []
+      }
+    ],
+    "ism_template": [
+      {
+        "index_patterns": [
+          "siem-attack-paths-*",
+          "siem-attack-path-*"
+        ],
+        "priority": 100
+      }
+    ]
+  }
+}

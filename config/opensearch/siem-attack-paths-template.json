@@ -1,0 +1,131 @@
+{
+  "index_patterns": [
+    "siem-attack-paths-*"
+  ],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0,
+        "refresh_interval": "10s",
+        "codec": "best_compression"
+      }
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer"
+        },
+        "path_id": {
+          "type": "keyword"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "seed": {
+          "properties": {
+            "kind": {
+              "type": "keyword"
+            },
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "title": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "severity": {
+          "type": "keyword"
+        },
+        "analyst_status": {
+          "type": "keyword"
+        },
+        "tier": {
+          "type": "keyword"
+        },
+        "conclusion": {
+          "type": "text",
+          "index": false
+        },
+        "path_at": {
+          "type": "date"
+        },
+        "created_ms": {
+          "type": "date",
+          "format": "epoch_millis"
+        },
+        "updated_ms": {
+          "type": "date",
+          "format": "epoch_millis"
+        },
+        "validated_at": {
+          "type": "date"
+        },
+        "evidence_state": {
+          "type": "text",
+          "index": false
+        },
+        "node_count": {
+          "type": "integer"
+        },
+        "edge_count": {
+          "type": "integer"
+        },
+        "telemetry_sources": {
+          "type": "keyword"
+        },
+        "excluded_unrelated_events": {
+          "type": "integer"
+        },
+        "rationale": {
+          "type": "object",
+          "enabled": false
+        },
+        "attack_sources": {
+          "type": "object",
+          "enabled": false
+        },
+        "affected_assets": {
+          "type": "object",
+          "enabled": false
+        },
+        "identities": {
+          "type": "object",
+          "enabled": false
+        },
+        "stages": {
+          "type": "object",
+          "enabled": false
+        },
+        "contradictions": {
+          "type": "object",
+          "enabled": false
+        },
+        "gaps": {
+          "type": "object",
+          "enabled": false
+        },
+        "next_steps": {
+          "type": "object",
+          "enabled": false
+        },
+        "validation": {
+          "type": "object",
+          "enabled": false
+        },
+        "fingerprint": {
+          "type": "keyword"
+        }
+      }
+    }
+  }
+}

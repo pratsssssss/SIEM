@@ -1,0 +1,11 @@
+{
+  "policy": {
+    "description": "Deletes health metric indices 62 days after creation. Indices are monthly, so every record is kept at least 30 days.",
+    "default_state": "hot",
+    "states": [
+      {"name": "hot", "actions": [], "transitions": [{"state_name": "delete", "conditions": {"min_index_age": "62d"}}]},
+      {"name": "delete", "actions": [{"delete": {}}], "transitions": []}
+    ],
+    "ism_template": [{"index_patterns": ["siem-health-metrics-*"], "priority": 100}]
+  }
+}

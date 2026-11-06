@@ -1,0 +1,40 @@
+{
+  "index_patterns": ["siem-health-transitions-*", "siem-health-episodes-*", "siem-health-metrics-*", "siem-health-current"],
+  "priority": 100,
+  "template": {
+    "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "30s", "codec": "best_compression"}},
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "ended_at": {"type": "date"},
+        "since": {"type": "date"},
+        "last_activity": {"type": "date"},
+        "schema_version": {"type": "integer"},
+        "component": {"type": "keyword"},
+        "type": {"type": "keyword"},
+        "platform": {"type": "keyword"},
+        "kind": {"type": "keyword"},
+        "status": {"type": "keyword"},
+        "previous": {"type": "keyword"},
+        "from": {"type": "keyword"},
+        "to": {"type": "keyword"},
+        "worst": {"type": "keyword"},
+        "condition": {"type": "keyword"},
+        "certainty": {"type": "keyword"},
+        "durability": {"type": "keyword"},
+        "freshness": {"type": "keyword"},
+        "coverage": {"type": "keyword"},
+        "bottleneck": {"type": "keyword"},
+        "seconds": {"type": "long"},
+        "first": {"type": "boolean"},
+        "reason": {"type": "text", "index": false},
+        "first_reason": {"type": "text", "index": false},
+        "last_reason": {"type": "text", "index": false},
+        "missing": {"type": "keyword"},
+        "metrics": {"type": "object", "dynamic": true}
+      },
+      "dynamic_templates": [{"metric_values": {"path_match": "metrics.*", "mapping": {"type": "float"}}}]
+    }
+  }
+}

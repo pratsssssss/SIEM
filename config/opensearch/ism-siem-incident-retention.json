@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Deletes incident and incident audit indices 365 days after creation. Matches nothing else.",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [{"state_name": "delete", "conditions": {"min_index_age": "365d"}}]
+      },
+      {
+        "name": "delete",
+        "actions": [{"delete": {}}],
+        "transitions": []
+      }
+    ],
+    "ism_template": [{"index_patterns": ["siem-incidents-*", "siem-incident-audit-*"], "priority": 100}]
+  }
+}

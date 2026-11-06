@@ -1,0 +1,39 @@
+# Installed to /etc/systemd/system/kafka.service. Started through siem.target, never at boot.
+[Unit]
+Description=Apache Kafka (KRaft)
+Documentation=https://kafka.apache.org/documentation/
+After=network.target opensearch.service
+PartOf=siem.target
+# Deliberate starts count too, so this allows normal use and still stops a crash loop.
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+Environment=LOG_DIR=/var/log/kafka
+Environment="KAFKA_HEAP_OPTS=-Xms512m -Xmx512m"
+# Without this Java binds [::ffff:127.0.0.1], which WSL does not forward to Windows.
+Environment=KAFKA_OPTS=-Djava.net.preferIPv4Stack=true
+# A single space stops kafka-run-class.sh adding its default unauthenticated JMX connector.
+Environment="KAFKA_JMX_OPTS= "
+# Replaces the default GC log, which can reach 1 GB.
+Environment="KAFKA_GC_LOG_OPTS=-Xlog:gc*:file=/var/log/kafka/kafkaServer-gc.log:time,tags:filecount=3,filesize=10M"
+ExecStart=/opt/kafka/bin/kafka-server-start.sh /home/linux/siem/config/kafka/server.properties
+ExecStartPost=/usr/local/lib/siem/wait-kafka.sh
+SuccessExitStatus=143
+LimitNOFILE=65536
+TimeoutStartSec=180
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=siem.target

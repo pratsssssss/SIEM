@@ -1,0 +1,68 @@
+{
+  "index_patterns": ["siem-windows-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index.number_of_shards": 1,
+      "index.number_of_replicas": 0,
+      "index.refresh_interval": "10s",
+      "index.codec": "best_compression",
+      "index.mapping.ignore_malformed": true,
+      "index.mapping.total_fields.limit": 400
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "ecs": {"properties": {"version": {"type": "keyword"}}},
+        "agent": {"properties": {"type": {"type": "keyword"}, "name": {"type": "keyword"}}},
+        "host": {"properties": {
+          "name": {"type": "keyword"}, "hostname": {"type": "keyword"},
+          "os": {"properties": {"type": {"type": "keyword"}, "family": {"type": "keyword"}}}}},
+        "event": {"properties": {
+          "id": {"type": "keyword"}, "kind": {"type": "keyword"}, "module": {"type": "keyword"}, "dataset": {"type": "keyword"},
+          "code": {"type": "keyword"}, "provider": {"type": "keyword"}, "category": {"type": "keyword"}, "type": {"type": "keyword"},
+          "action": {"type": "keyword"}, "outcome": {"type": "keyword"}, "created": {"type": "date"}, "ingested": {"type": "date"}}},
+        "log": {"properties": {"level": {"type": "keyword"}}},
+        "labels": {"type": "flat_object"},
+        "siem": {"properties": {"kafka": {"properties": {"topic": {"type": "keyword"}, "partition": {"type": "integer"}, "offset": {"type": "long"}}}}},
+        "user": {"properties": {
+          "name": {"type": "keyword"}, "domain": {"type": "keyword"}, "id": {"type": "keyword"},
+          "target": {"properties": {"name": {"type": "keyword"}, "domain": {"type": "keyword"}}}}},
+        "group": {"properties": {"name": {"type": "keyword"}, "domain": {"type": "keyword"}}},
+        "process": {"properties": {
+          "entity_id": {"type": "keyword"}, "pid": {"type": "long"}, "name": {"type": "keyword"}, "executable": {"type": "keyword"},
+          "command_line": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 8191}}},
+          "working_directory": {"type": "keyword"},
+          "hash": {"properties": {"md5": {"type": "keyword"}, "sha1": {"type": "keyword"}, "sha256": {"type": "keyword"}, "imphash": {"type": "keyword"}}},
+          "pe": {"properties": {"original_file_name": {"type": "keyword"}, "product": {"type": "keyword"}, "description": {"type": "keyword"}, "company": {"type": "keyword"}, "file_version": {"type": "keyword"}}},
+          "parent": {"properties": {
+            "entity_id": {"type": "keyword"}, "pid": {"type": "long"}, "name": {"type": "keyword"}, "executable": {"type": "keyword"},
+            "command_line": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 8191}}}}},
+          "target": {"properties": {"entity_id": {"type": "keyword"}, "pid": {"type": "long"}, "executable": {"type": "keyword"}}}}},
+        "source": {"properties": {"ip": {"type": "ip"}, "port": {"type": "integer"}, "domain": {"type": "keyword"}}},
+        "destination": {"properties": {"ip": {"type": "ip"}, "port": {"type": "integer"}, "domain": {"type": "keyword"}}},
+        "network": {"properties": {"transport": {"type": "keyword"}, "direction": {"type": "keyword"}}},
+        "dns": {"properties": {"question": {"properties": {"name": {"type": "keyword"}}}, "answers": {"properties": {"data": {"type": "keyword"}}}}},
+        "file": {"properties": {"path": {"type": "keyword"}, "name": {"type": "keyword"}, "pe": {"properties": {"original_file_name": {"type": "keyword"}}}}},
+        "registry": {"properties": {"key": {"type": "keyword"}, "data": {"properties": {"strings": {"type": "keyword", "ignore_above": 8191}}}}},
+        "service": {"properties": {"name": {"type": "keyword"}}},
+        "rule": {"properties": {"name": {"type": "keyword"}, "id": {"type": "keyword"}}},
+        "threat": {"properties": {"indicator": {"properties": {"name": {"type": "keyword"}, "severity": {"type": "keyword"}}}}},
+        "powershell": {"properties": {
+          "script_block": {"properties": {"id": {"type": "keyword"}, "path": {"type": "keyword"}, "text": {"type": "text"}}},
+          "context_info": {"type": "text"}, "payload": {"type": "text"}}},
+        "winlog": {"properties": {
+          "channel": {"type": "keyword"}, "computer_name": {"type": "keyword"}, "event_id": {"type": "keyword"}, "record_id": {"type": "keyword"},
+          "provider_name": {"type": "keyword"}, "provider_guid": {"type": "keyword"}, "task": {"type": "keyword"}, "opcode": {"type": "keyword"},
+          "keywords": {"type": "keyword"}, "version": {"type": "integer"}, "activity_id": {"type": "keyword"},
+          "user": {"properties": {"identifier": {"type": "keyword"}, "name": {"type": "keyword"}}},
+          "logon": {"properties": {"id": {"type": "keyword"}, "type": {"type": "keyword"}}},
+          "process": {"properties": {"pid": {"type": "long"}, "thread": {"properties": {"id": {"type": "long"}}}}},
+          "event_data": {"type": "flat_object"},
+          "user_data": {"type": "text", "index": false},
+          "xml": {"type": "text", "index": false}}}
+      }
+    }
+  }
+}

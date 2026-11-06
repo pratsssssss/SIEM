@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Makes audit indices read-only once their day has passed. Has no delete state, on purpose: audit evidence is never removed by routine retention.",
+    "default_state": "writing",
+    "states": [
+      {
+        "name": "writing",
+        "actions": [],
+        "transitions": [{"state_name": "evidence", "conditions": {"min_index_age": "2d"}}]
+      },
+      {
+        "name": "evidence",
+        "actions": [{"read_only": {}}],
+        "transitions": []
+      }
+    ],
+    "ism_template": [{"index_patterns": ["security-auditlog-*"], "priority": 100}]
+  }
+}
