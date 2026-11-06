@@ -1,0 +1,2 @@
+# Wheels for Python 3.12 on Linux x86-64, with their SHA-256. deploy/wsl/install-path.sh copies the library from the asset install, which checked the same wheel.
+pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc

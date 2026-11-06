@@ -1,0 +1,29 @@
+# Pipeline health. Thresholds, with the reason for each, are in docs/operations/pipeline-health.md.
+# Unset values take the defaults in health/siem_health/config.py. A value out of bounds stops the service at start.
+# The Windows folder for status reports, set from config/wsl/site.env when installed.
+publish_report: "@SIEM_WINDOWS_MONITOR@/health.json"
+reports:
+  windows-agent: "@SIEM_WINDOWS_MONITOR@/windows-agent.json"
+
+schedule:
+  cycle_seconds: 60
+  events_every_cycles: 3
+  slow_every_cycles: 15
+  publish_every_cycles: 5
+
+# quiet_minutes is how long a source usually stays silent, set above the longest silence measured on 2026-11-01 across
+# 48 hours and 16 hours of uptime, so treat these as a first estimate. Past it a source is overdue, which is UNKNOWN and
+# not a failure. No value means it is often silent for hours: longest measured 400 to 660 minutes.
+sources:
+  - {dataset: windows.sysmon, quiet_minutes: 15}
+  - {dataset: windows.security, quiet_minutes: 30}
+  - {dataset: windows.powershell, quiet_minutes: 60}
+  - {dataset: windows.taskscheduler, quiet_minutes: 120}
+  - {dataset: windows.system, quiet_minutes: 240}
+  - {dataset: windows.firewall}
+  - {dataset: windows.defender}
+  - {dataset: linux.system, quiet_minutes: 30}
+  - {dataset: linux.auth, quiet_minutes: 90}
+  - {dataset: linux.cron, quiet_minutes: 120}
+  - {dataset: linux.kernel}
+  - {dataset: linux.package}

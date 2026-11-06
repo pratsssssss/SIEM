@@ -1,0 +1,32 @@
+[Unit]
+Description=SIEM pipeline health watchdog
+# Reports on siem-health from outside it. It restarts nothing, and shares no code path with the service.
+PartOf=siem.target
+
+[Service]
+Type=oneshot
+User=siem-health
+Group=siem-health
+Environment=PYTHONPATH=/opt/siem-health/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SIEM_WINDOWS_MONITOR=@SIEM_WINDOWS_MONITOR@
+ExecStart=/usr/bin/python3 -m siem_health.watchdog
+TimeoutStartSec=30
+# systemd logs every start of a timer job, and the Linux agent ships those lines. Without this, watching the monitor
+# would add about 860 events a day to the pipeline it watches. Warnings and errors still get through.
+LogLevelMax=warning
+MemoryMax=32M
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/status/health-watchdog
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+CapabilityBoundingSet=

@@ -1,0 +1,57 @@
+# Asset inventory service. See docs/detection/asset-inventory.md.
+state_file: /home/linux/siem/data/asset/asset.db
+socket: /run/siem-asset/control.sock
+opensearch:
+  url: https://127.0.0.1:9200
+  ca_file: /home/linux/siem/config/asset/opensearch-ca.pem
+  login_file: /home/linux/siem/config/asset/opensearch-asset.json
+reports:
+  - /home/linux/siem/data/asset/asset.json
+  - /home/linux/siem/data/status/asset/asset.json
+  - "@SIEM_WINDOWS_MONITOR@/asset.json"
+
+# Snapshots from other machines. Every file here is treated as hostile.
+drop_folder: "@SIEM_WINDOWS_INVENTORY@"
+# The SIEM host reports on itself.
+collect_local: true
+
+intervals:
+  drop_seconds: 120
+  local_seconds: 21600
+  # The stack is still starting at first, and a service not yet up is not a service stopped.
+  local_delay_seconds: 300
+  telemetry_seconds: 300
+  incidents_seconds: 300
+  lifecycle_seconds: 3600
+  flush_seconds: 30
+
+lifecycle:
+  new_hours: 72
+  stale_days: 14
+
+telemetry:
+  index: siem-windows-*
+  backfill_days: 7
+  max_window_hours: 24
+  lag_seconds: 60
+  max_hosts: 50
+  max_users: 100
+  max_peers: 100
+  max_processes: 500
+  max_events: 100
+  # A source that normally never stops. Its silence, while the host still reports, is a lead.
+  continuous_sources: [windows.sysmon, windows.security]
+  silent_source_hours: 6
+
+max_new_assets_per_day: 25
+max_items_per_kind: 1500
+
+# Service name to label. Their removal, a stop or a change of start type is security-relevant.
+security_services:
+  windefend: Microsoft Defender Antivirus
+  sense: Microsoft Defender for Endpoint
+  mpssvc: Windows Firewall
+  sysmon64: Sysmon
+  sysmon: Sysmon
+  vector: Vector agent
+  eventlog: Windows Event Log

@@ -1,0 +1,43 @@
+[Unit]
+Description=SIEM pipeline health
+# Nothing depends on this, and it needs nothing to be up: what it cannot reach it reports as unknown. After= only orders
+# a stack start. Without it, the first cycle sees services still starting, and shows them stopped for three minutes.
+# An optional add-on adds itself here with a drop-in from its own installer.
+After=opensearch.service kafka.service seal-verifier.service vector.service siem-detector.service siem-enricher.service siem-correlator.service siem-asset.service siem-path.service siem-linux-agent.service
+PartOf=siem.target
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-health
+Group=siem-health
+ExecStart=/usr/local/bin/siem-health run
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=20
+UMask=0027
+MemoryMax=128M
+CPUQuota=15%
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/health
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=siem.target

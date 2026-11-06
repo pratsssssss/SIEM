@@ -1,0 +1,39 @@
+[Unit]
+Description=SIEM asset inventory service
+# Nothing depends on this. Collection, detection, enrichment and correlation run with or without it.
+After=opensearch.service
+PartOf=siem.target
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-asset
+Group=siem-asset
+# The control socket belongs to this group. Administrators are recognised by siem-asset-admin, from /etc/group.
+SupplementaryGroups=siem-analyst
+ExecStart=/usr/local/bin/siem-asset run
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=30
+RuntimeDirectory=siem-asset
+RuntimeDirectoryMode=0755
+MemoryMax=128M
+CPUQuota=25%
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/asset
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+ReadWritePaths=-/home/linux/siem/data/status/asset
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=siem.target

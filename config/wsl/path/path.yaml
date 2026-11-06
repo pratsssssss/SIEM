@@ -1,0 +1,36 @@
+# Attack path service. See docs/detection/attack-paths.md.
+state_file: /home/linux/siem/data/path/path.db
+socket: /run/siem-path/control.sock
+# Phase 14 answers who held an address at a moment. If it is down, addresses stay unresolved.
+asset_socket: /run/siem-asset/control.sock
+opensearch:
+  url: https://127.0.0.1:9200
+  ca_file: /home/linux/siem/config/path/opensearch-ca.pem
+  login_file: /home/linux/siem/config/path/opensearch-path.json
+reports:
+  - /home/linux/siem/data/path/path.json
+  - /home/linux/siem/data/status/path/path.json
+  - "@SIEM_WINDOWS_MONITOR@/path.json"
+
+intervals:
+  sync_seconds: 120
+  work_seconds: 10
+  validate_seconds: 3600
+  flush_seconds: 30
+
+# How far back the first run looks. Alerts and incidents outlive their events, so older paths show that.
+backfill_days: 30
+paths_per_cycle: 5
+validate_batch: 5
+# Alerts in no incident become paths at these levels. Lower ones would be a path for every routine event.
+alert_seed_severities: [high, critical]
+
+limits:
+  max_alerts: 50
+  max_events: 200
+  context_events: 200
+  window_minutes: 240
+  sequence_minutes: 30
+  max_nodes: 200
+  max_edges: 400
+  max_hops: 3

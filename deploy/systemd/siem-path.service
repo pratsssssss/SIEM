@@ -1,0 +1,39 @@
+[Unit]
+Description=SIEM attack path service
+# Nothing depends on this. Detection, correlation and everything before them run with or without it.
+After=opensearch.service siem-asset.service
+PartOf=siem.target
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-path
+Group=siem-path
+# The control socket belongs to this group, and the asset service answers its members.
+SupplementaryGroups=siem-analyst
+ExecStart=/usr/local/bin/siem-path run
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=30
+RuntimeDirectory=siem-path
+RuntimeDirectoryMode=0755
+MemoryMax=128M
+CPUQuota=25%
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/path
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+ReadWritePaths=-/home/linux/siem/data/status/path
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=siem.target

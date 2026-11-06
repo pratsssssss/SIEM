@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch the SIEM health monitor every five minutes
+PartOf=siem.target
+
+[Timer]
+OnActiveSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=siem.target
