@@ -1,0 +1,24 @@
+title: Account Checked Its Own Privileges
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f07
+status: experimental
+description: whoami listed the current account's privileges or groups, which often comes before privilege escalation.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.discovery
+    - attack.t1033
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    tool:
+        Image|endswith: '\whoami.exe'
+    switch:
+        CommandLine|contains:
+            - '/priv'
+            - '/all'
+            - '/groups'
+    condition: tool and switch
+falsepositives:
+    - Administrators and support scripts.
+level: low

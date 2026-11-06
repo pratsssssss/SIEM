@@ -1,0 +1,30 @@
+title: Scheduled Task Created From The Command Line
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0b
+status: experimental
+description: schtasks.exe created a task that runs a shell or script, or a program from a user-writable folder.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.persistence
+    - attack.execution
+    - attack.t1053.005
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    tool:
+        Image|endswith: '\schtasks.exe'
+        CommandLine|contains: '/create'
+    payload:
+        CommandLine|contains:
+            - 'cmd'
+            - 'powershell'
+            - 'wscript'
+            - 'mshta'
+            - '\AppData\'
+            - '\Temp\'
+            - '\Users\Public\'
+    condition: tool and payload
+falsepositives:
+    - Administrators creating maintenance tasks.
+level: medium

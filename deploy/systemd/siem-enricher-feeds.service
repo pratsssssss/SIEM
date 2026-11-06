@@ -1,0 +1,25 @@
+[Unit]
+Description=SIEM threat feed update
+# Never Requires: an update needs only the network, and must not start anything else.
+After=network.target
+
+[Service]
+Type=oneshot
+User=siem-enricher
+Group=siem-enricher
+ExecStart=/usr/local/bin/siem-enricher feeds update
+MemoryMax=256M
+CPUQuota=50%
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/enrichment
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+CapabilityBoundingSet=

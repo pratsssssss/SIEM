@@ -1,0 +1,11 @@
+[Unit]
+Description=Checks for threat feed updates
+PartOf=siem.target
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=6h
+Unit=siem-enricher-feeds.service
+
+[Install]
+WantedBy=siem.target

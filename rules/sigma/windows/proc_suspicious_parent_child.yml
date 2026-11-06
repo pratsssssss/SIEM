@@ -1,0 +1,41 @@
+title: Shell Or Script Host Started By An Unusual Parent
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f03
+status: experimental
+description: An Office application, script host or HTML application started a shell or a proxy-execution binary.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.execution
+    - attack.t1204.002
+    - attack.t1059
+    - attack.stealth
+    - attack.t1218
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    parent:
+        ParentImage|endswith:
+            - '\winword.exe'
+            - '\excel.exe'
+            - '\powerpnt.exe'
+            - '\outlook.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\mshta.exe'
+            - '\wmiprvse.exe'
+    child:
+        Image|endswith:
+            - '\cmd.exe'
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\mshta.exe'
+            - '\rundll32.exe'
+            - '\regsvr32.exe'
+    condition: parent and child
+falsepositives:
+    - Logon scripts run by a script host.
+    - Management tools that use WMI to start a shell.
+level: high

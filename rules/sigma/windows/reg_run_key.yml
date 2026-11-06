@@ -1,0 +1,24 @@
+title: Autorun Registry Value Written
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0c
+status: experimental
+description: A value was written under a registry key that starts programs at logon.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.persistence
+    - attack.t1547.001
+logsource:
+    product: windows
+    category: registry_set
+detection:
+    selection:
+        TargetObject|contains:
+            - '\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\'
+            - '\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce\'
+            - '\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run\'
+            - '\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Shell'
+            - '\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Userinit'
+    condition: selection
+falsepositives:
+    - Applications that start themselves at logon.
+level: medium

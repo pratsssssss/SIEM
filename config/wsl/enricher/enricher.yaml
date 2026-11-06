@@ -1,0 +1,53 @@
+# Enrichment service. See docs/detection/enrichment.md and docs/detection/threat-intelligence.md.
+state_file: /home/linux/siem/data/enrichment/enricher.db
+# Provider keys: a JSON object of provider name to key, owner-only. See the provider documentation.
+key_file: /home/linux/siem/config/enricher/provider-keys.json
+# Each *.csv here is your own intelligence: one `kind,value,category` per line, kind being ip, domain,
+# url or sha256. This is the way to add file hashes with no provider key.
+owner_feed_folder: /home/linux/siem/data/enrichment/owner
+timeout_seconds: 15
+opensearch:
+  url: https://127.0.0.1:9200
+  ca_file: /home/linux/siem/config/enricher/opensearch-ca.pem
+  login_file: /home/linux/siem/config/enricher/opensearch-enricher.json
+reports:
+  - /home/linux/siem/data/enrichment/enricher.json
+  - /home/linux/siem/data/status/enricher/enricher.json
+  - "@SIEM_WINDOWS_MONITOR@/enricher.json"
+geo:
+  folder: /home/linux/siem/data/enrichment/geo
+  files:
+    city: https://download.db-ip.com/free/dbip-city-lite-{month}.mmdb.gz
+    asn: https://download.db-ip.com/free/dbip-asn-lite-{month}.mmdb.gz
+limits:
+  workers: 4
+  retries: 3
+  backoff_seconds: 2
+  breaker_failures: 5
+  breaker_seconds: 900
+  # URLs are never sent out unless this is true. Queries and credentials are removed in any case.
+  allow_external_urls: false
+
+# External lookups run at alert time only (D8), and only for structured fields. A provider stays off
+# unless enabled here, and has its key. Nothing below costs money or needs an account to stay off.
+providers:
+  abuseipdb: {enabled: true}
+  virustotal: {enabled: true}
+  otx: {enabled: true}
+  abusech: {enabled: true}
+  # Needs no key, so it would run as soon as it is enabled. Each lookup tells CIRCL the hash exists here.
+  circl-hashlookup: {enabled: false}
+
+# quality is how far this source is trusted, confidence is how sure a listing is. Sources from one
+# publisher count once. stance context adds information, and never affects a verdict.
+feeds:
+  - {name: feodo-c2, publisher: abuse.ch, url: 'https://feodotracker.abuse.ch/downloads/ipblocklist.json', format: feodo-json, kind: ip, stance: malicious, quality: 0.9, confidence: 90, category: botnet-c2, stale_hours: 8760, refresh_hours: 24, min_rows: 0}
+  - {name: et-compromised, publisher: proofpoint-et, url: 'https://rules.emergingthreats.net/blockrules/compromised-ips.txt', format: lines, kind: ip, stance: malicious, quality: 0.75, confidence: 80, category: compromised-host, stale_hours: 72, refresh_hours: 24, min_rows: 50}
+  - {name: cins-badguys, publisher: cinsscore, url: 'https://cinsscore.com/list/ci-badguys.txt', format: lines, kind: ip, stance: suspicious, quality: 0.6, confidence: 70, category: scanner, stale_hours: 72, refresh_hours: 24, min_rows: 1000}
+  - {name: blocklist-de, publisher: blocklist.de, url: 'https://lists.blocklist.de/lists/all.txt', format: lines, kind: ip, stance: suspicious, quality: 0.6, confidence: 70, category: abuse-reports, stale_hours: 72, refresh_hours: 24, min_rows: 1000}
+  - {name: spamhaus-drop, publisher: spamhaus, url: 'https://www.spamhaus.org/drop/drop_v4.json', format: spamhaus-jsonl, kind: ip, stance: malicious, quality: 0.9, confidence: 90, category: hijacked-netblock, stale_hours: 96, refresh_hours: 24, min_rows: 100}
+  - {name: openphish, publisher: openphish, url: 'https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt', format: lines, kind: url, stance: malicious, quality: 0.8, confidence: 85, category: phishing, stale_hours: 72, refresh_hours: 12, min_rows: 20}
+  - {name: phishing-army, publisher: phishing.army, url: 'https://phishing.army/download/phishing_army_blocklist.txt', format: lines, kind: domain, stance: malicious, quality: 0.75, confidence: 80, category: phishing, stale_hours: 72, refresh_hours: 24, min_rows: 1000}
+  - {name: tor-exits, publisher: torproject, url: 'https://check.torproject.org/torbulkexitlist', format: lines, kind: ip, stance: context, quality: 0, confidence: 0, category: tor-exit, stale_hours: 72, refresh_hours: 24, min_rows: 100}
+  - {name: aws-ranges, publisher: amazon, url: 'https://ip-ranges.amazonaws.com/ip-ranges.json', format: aws-json, kind: ip, stance: context, quality: 0, confidence: 0, category: cloud-aws, stale_hours: 720, refresh_hours: 168, min_rows: 100}
+  - {name: gcp-ranges, publisher: google, url: 'https://www.gstatic.com/ipranges/cloud.json', format: gcp-json, kind: ip, stance: context, quality: 0, confidence: 0, category: cloud-gcp, stale_hours: 720, refresh_hours: 168, min_rows: 50}

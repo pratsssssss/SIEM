@@ -1,0 +1,25 @@
+title: Connection To A Port Used By Remote Shells
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f11
+status: experimental
+description: A process connected to a port often used by remote shells and command-and-control tools.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.command-and-control
+    - attack.t1571
+logsource:
+    product: windows
+    category: network_connection
+detection:
+    port:
+        DestinationPort:
+            - 1337
+            - 4444
+            - 4445
+            - 5555
+            - 6666
+            - 31337
+    condition: port
+falsepositives:
+    - Development servers on the same ports.
+level: medium

@@ -1,0 +1,134 @@
+# Correlation rules. See docs/detection/correlation-rules.md. An alert rule is named by its Phase 9 ID.
+# join is the link the rule relies on. It decides how much an incident can claim:
+#   lineage         Sysmon recorded the parent and child. Proof.
+#   user            one account, by SID or domain and name
+#   indicator       one indicator with a hostile verdict
+#   source_ip, destination_ip
+#   user_name       the same bare name. Identity is uncertain, and the incident says so
+#   host            the same machine. Only timing links them, so this alone is never called causal
+rules:
+  - id: cor-logon-after-burst
+    scenario: 1
+    title: Failed Logon Burst Followed By A Successful Logon
+    description: A burst of failed logons for an account was followed by a successful logon after failures. The account may be compromised.
+    kind: sequence
+    join: user_name
+    window_seconds: 1800
+    stages:
+      - {rules: [c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b01]}
+      - {rules: [c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b03]}
+
+  - id: cor-password-spray
+    scenario: 2
+    title: Password Spray From One Source Address
+    description: One source address failed logons across many accounts. A single detection is enough, because the rule already counted the accounts.
+    kind: single
+    join: source_ip
+    window_seconds: 1800
+    select: {rules: [c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b02], min_facts: {accounts: 4}}
+
+  - id: cor-powershell-child
+    scenario: 3
+    title: Encoded PowerShell Started A Suspicious Process
+    description: A PowerShell process flagged as encoded started a process that was itself flagged. Script block alerts carry no process identity, so only encoded command alerts can start this chain.
+    kind: sequence
+    join: lineage
+    window_seconds: 3600
+    stages:
+      - {rules: [6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f02, c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b04]}
+      - {any_process: true}
+
+  - id: cor-service-then-process
+    scenario: 4
+    title: New Service Followed By A Flagged Process Started By The Service Manager
+    description: A new service was installed, then the service manager started a flagged process on that host. Windows records no link between the two events, so this is an association, not proof.
+    kind: sequence
+    join: host
+    window_seconds: 1800
+    stages:
+      - {rules: [6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f08, 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f09]}
+      - {any_process: true, parent_names: [services.exe]}
+
+  - id: cor-task-then-process
+    scenario: 5
+    title: Scheduled Task Followed By A Flagged Process Started By The Task Service
+    description: A scheduled task was registered, then the task service started a flagged process on that host. Windows records no link between the two events, so this is an association, not proof.
+    kind: sequence
+    join: host
+    window_seconds: 1800
+    stages:
+      - {rules: [6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0a, 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0b]}
+      - {any_process: true, parent_names: [svchost.exe, taskhostw.exe, taskeng.exe]}
+
+  - id: cor-same-indicator
+    scenario: 6
+    title: Several Alerts Involve The Same Hostile Indicator
+    description: More than one alert involved one indicator that threat intelligence calls hostile.
+    kind: threshold
+    join: indicator
+    window_seconds: 86400
+    min_alerts: 2
+    select: {}
+
+  - id: cor-host-many-domains
+    scenario: 7
+    title: One Host Contacted Several Hostile Domains
+    description: Threat intelligence matched DNS activity on one host for more than one domain.
+    kind: distinct
+    join: host
+    window_seconds: 3600
+    count: indicator
+    min_count: 2
+    select: {signals: true}
+
+  - id: cor-user-many-hosts
+    scenario: 8
+    title: One Account Flagged On Several Hosts
+    description: Alerts name one account on more than one host. A local account with the same name on another host is a different account, so only a SID or a domain account can link here.
+    kind: distinct
+    join: user
+    window_seconds: 7200
+    count: host
+    min_count: 2
+    select: {}
+
+  - id: cor-privilege-then-admin
+    scenario: 9
+    title: Privilege Change Followed By Administrative Activity
+    description: An account gained privilege, or a shell was started by an auto-elevating binary, and then the same account made a persistent change.
+    kind: sequence
+    join: user
+    window_seconds: 3600
+    stages:
+      - {rules: [6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f05, 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f06]}
+      - {rules: [6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0b, 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0c, 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0d, 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0a]}
+
+  - id: cor-multi-stage
+    scenario: 10
+    title: Several Attack Stages By One Account
+    description: Independent rules covering at least three ATT&CK tactics fired for one account within two hours.
+    kind: chain
+    join: user
+    window_seconds: 7200
+    min_tactics: 3
+    select: {}
+
+  - id: cor-linux-privileged-account
+    scenario: 11
+    title: Account Added To A Privileged Group On The Linux Host
+    description: An account was added to a group that grants administration of the SIEM host. One detection is enough, because the host runs the SIEM itself.
+    kind: single
+    join: host
+    window_seconds: 1800
+    select: {rules: [d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c04]}
+
+  - id: cor-linux-auth-burst-then-sudo
+    scenario: 12
+    title: Failed Authentications Followed By Sudo On The Linux Host
+    description: A burst of failed authentications was followed by a sudo command under the same account name, on the Linux host. Identity rests on the name, so the incident says so.
+    kind: sequence
+    join: user_name
+    window_seconds: 1800
+    stages:
+      - {rules: [d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c08]}
+      - {rules: [d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c02]}

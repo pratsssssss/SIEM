@@ -1,0 +1,20 @@
+title: New Service Installed
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f08
+status: experimental
+description: A new Windows service was installed. Services run with high privilege, and survive a restart.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1543.003
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        EventID: 7045
+    condition: selection
+falsepositives:
+    - Software installation and updates.
+level: medium

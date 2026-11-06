@@ -1,0 +1,29 @@
+title: File Written To A Startup Folder
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0d
+status: experimental
+description: A file that can run was written to a Startup folder, so it will run at the next logon.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.persistence
+    - attack.t1547.001
+logsource:
+    product: windows
+    category: file_event
+detection:
+    folder:
+        TargetFilename|contains: '\Start Menu\Programs\Startup\'
+    kind:
+        TargetFilename|endswith:
+            - '.exe'
+            - '.bat'
+            - '.cmd'
+            - '.ps1'
+            - '.vbs'
+            - '.js'
+            - '.lnk'
+            - '.hta'
+    condition: folder and kind
+falsepositives:
+    - Applications that add a shortcut to Startup.
+level: medium

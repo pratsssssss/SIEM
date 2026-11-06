@@ -1,0 +1,35 @@
+[Unit]
+Description=SIEM enrichment service
+# Nothing depends on this. Ingestion and detection run with or without it.
+After=opensearch.service
+PartOf=siem.target
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-enricher
+Group=siem-enricher
+ExecStart=/usr/local/bin/siem-enricher run
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=60
+MemoryMax=192M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/enrichment
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+ReadWritePaths=-/home/linux/siem/data/status/enricher
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=siem.target

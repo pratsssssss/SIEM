@@ -1,0 +1,34 @@
+title: PowerShell Script Downloads And Runs Code
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f01
+status: experimental
+description: A script block both fetches content from the network and evaluates it, or decodes Base64 and evaluates it.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.execution
+    - attack.t1059.001
+    - attack.command-and-control
+    - attack.t1105
+logsource:
+    product: windows
+    category: ps_script
+detection:
+    fetch:
+        ScriptBlockText|contains:
+            - 'DownloadString'
+            - 'DownloadData'
+            - 'Invoke-WebRequest'
+            - 'Net.WebClient'
+    decode:
+        ScriptBlockText|contains: 'FromBase64String'
+    evaluate:
+        ScriptBlockText|contains:
+            - 'Invoke-Expression'
+            - 'IEX('
+            - 'IEX ('
+            - '| IEX'
+            - '|IEX'
+    condition: (fetch or decode) and evaluate
+falsepositives:
+    - Installers and bootstrap scripts that download and run their own setup code.
+level: high

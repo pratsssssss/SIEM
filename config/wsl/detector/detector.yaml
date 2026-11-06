@@ -1,0 +1,25 @@
+# Detection engine settings. See docs/detection/detection-engine.md.
+rules_dir: /opt/siem-detector/rules
+state_file: /home/linux/siem/data/detector/state.db
+opensearch:
+  url: https://127.0.0.1:9200
+  ca_file: /home/linux/siem/config/detector/opensearch-ca.pem
+  login_file: /home/linux/siem/config/detector/opensearch-detector.json
+kafka:
+  bootstrap: 127.0.0.1:9092
+  topic: siem-alerts
+runner:
+  # Each run re-reads this much, for documents that became searchable late.
+  overlap_seconds: 300
+  # A run stops this far before now. The index refreshes every 10 s.
+  settle_seconds: 30
+  # How far back a rule starts on its first run.
+  initial_lookback_seconds: 3600
+  page_size: 500
+  max_events_per_run: 20000
+  # Finished alerts stay in the state file this long, so a rerun cannot repeat one.
+  retention_days: 16
+reports:
+  - /home/linux/siem/data/detector/detector.json
+  - /home/linux/siem/data/status/detector/detector.json
+  - "@SIEM_WINDOWS_MONITOR@/detector.json"

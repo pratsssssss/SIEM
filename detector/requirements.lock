@@ -1,0 +1,16 @@
+# Wheels for Python 3.12 on Linux x86-64, with their SHA-256. deploy/wsl/install-detector.sh checks them.
+certifi-2026.10.23-py3-none-any.whl e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
+charset_normalizer-3.5.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl 3d31298449090ab8d47b7b1b2a555ff73cac7ed438a08b7ac160980c7ebed649
+confluent_kafka-2.16.1-cp312-cp312-manylinux_2_28_x86_64.whl fdb2c4d53e84e10f4e567f4e74bba45d0ce90276b81259c3fc58df6960caabf5
+diskcache-5.6.3-py3-none-any.whl 5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19
+idna-3.20-py3-none-any.whl ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+jinja2-3.1.6-py3-none-any.whl 85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
+jq-1.13.0-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl 2974d3eed7401073b8f6508da0c5d2d2087a4928e5fbc00749338d81329b1f92
+markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl 8e124f974786f831d6043728e38296969d3579db8896fe004682f5758e613581
+packaging-26.3-py3-none-any.whl d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pyparsing-3.3.3-py3-none-any.whl ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4
+pysigma-1.5.1-py3-none-any.whl 1e6e080bde31db6039eb5d87d43322bf416534f30048091c65038e88225b8200
+pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc
+requests-2.34.2-py3-none-any.whl 2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+typing_extensions-4.16.0-py3-none-any.whl 481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+urllib3-2.8.0-py3-none-any.whl 0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3

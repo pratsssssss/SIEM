@@ -1,0 +1,39 @@
+title: Script Host Or Proxy Binary Connected Outside The Host
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f10
+status: experimental
+description: A script host or proxy-execution binary made an outbound connection to a public address.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.command-and-control
+    - attack.t1071.001
+    - attack.stealth
+    - attack.t1218
+logsource:
+    product: windows
+    category: network_connection
+detection:
+    tool:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\cmd.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\mshta.exe'
+            - '\rundll32.exe'
+            - '\regsvr32.exe'
+            - '\certutil.exe'
+    private:
+        DestinationIp|cidr:
+            - '127.0.0.0/8'
+            - '10.0.0.0/8'
+            - '172.16.0.0/12'
+            - '192.168.0.0/16'
+            - '169.254.0.0/16'
+            - '::1/128'
+            - 'fe80::/10'
+    condition: tool and not private
+falsepositives:
+    - Administrative scripts that reach public services.
+level: medium

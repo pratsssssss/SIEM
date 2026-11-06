@@ -1,0 +1,33 @@
+title: Service Runs A Shell Or Script
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f09
+status: experimental
+description: A new service's image path runs a shell, a script host, or a file from a user-writable folder.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1543.003
+    - attack.execution
+    - attack.t1569.002
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        EventID: 7045
+    path:
+        ImagePath|contains:
+            - 'cmd.exe'
+            - 'cmd /c'
+            - 'powershell'
+            - 'mshta'
+            - 'wscript'
+            - 'cscript'
+            - '\AppData\'
+            - '\Temp\'
+            - '\Users\Public\'
+    condition: selection and path
+falsepositives:
+    - Poorly packaged software installed in a user profile.
+level: high

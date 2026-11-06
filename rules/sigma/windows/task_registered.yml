@@ -1,0 +1,20 @@
+title: Scheduled Task Registered
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0a
+status: experimental
+description: A new scheduled task was registered. Event 106 is used, because this host does not produce Security 4698.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.persistence
+    - attack.execution
+    - attack.t1053.005
+logsource:
+    product: windows
+    service: taskscheduler
+detection:
+    selection:
+        EventID: 106
+    condition: selection
+falsepositives:
+    - Software installation and updates.
+level: low

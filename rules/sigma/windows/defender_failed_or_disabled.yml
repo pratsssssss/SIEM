@@ -1,0 +1,24 @@
+title: Microsoft Defender Protection Disabled Or Action Failed
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0f
+status: experimental
+description: Real-time protection was turned off, or Defender could not act on a threat.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.defense-impairment
+    - attack.t1685
+logsource:
+    product: windows
+    service: windefend
+detection:
+    selection:
+        EventID:
+            - 1008
+            - 1119
+            - 5001
+            - 5010
+            - 5012
+    condition: selection
+falsepositives:
+    - Deliberate changes by an administrator.
+level: high

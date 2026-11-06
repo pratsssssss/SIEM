@@ -1,0 +1,23 @@
+title: Microsoft Defender Detected Malware
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0e
+status: experimental
+description: Defender detected a threat, acted on one, or failed to act.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.execution
+    - attack.t1204
+logsource:
+    product: windows
+    service: windefend
+detection:
+    selection:
+        EventID:
+            - 1006
+            - 1015
+            - 1116
+            - 1117
+    condition: selection
+falsepositives:
+    - Test files such as EICAR, and potentially unwanted programs.
+level: high

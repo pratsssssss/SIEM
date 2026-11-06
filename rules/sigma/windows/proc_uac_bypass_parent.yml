@@ -1,0 +1,29 @@
+title: Shell Started By An Auto-Elevating Windows Binary
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f06
+status: experimental
+description: A Windows binary that elevates without a prompt started a shell, which is a common way to get past UAC.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.002
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    parent:
+        ParentImage|endswith:
+            - '\fodhelper.exe'
+            - '\computerdefaults.exe'
+            - '\sdclt.exe'
+            - '\eventvwr.exe'
+            - '\slui.exe'
+    child:
+        Image|endswith:
+            - '\cmd.exe'
+            - '\powershell.exe'
+            - '\pwsh.exe'
+    condition: parent and child
+falsepositives:
+    - Unlikely.
+level: high

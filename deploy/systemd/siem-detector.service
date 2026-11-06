@@ -1,0 +1,36 @@
+[Unit]
+Description=SIEM detection engine
+After=opensearch.service kafka.service
+PartOf=siem.target
+# Deliberate starts count too, so this allows normal use and still stops a crash loop.
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-detector
+Group=siem-detector
+ExecStart=/usr/local/bin/siem-detector run
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=60
+# WSL has 6 GB, and the budget gives this 0.25 GB.
+MemoryMax=256M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/detector
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+ReadWritePaths=-/home/linux/siem/data/status/detector
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=siem.target

@@ -1,0 +1,20 @@
+title: Local Account Created On The Linux Host
+id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c03
+status: experimental
+description: A local account was created on the SIEM host. Installing a SIEM service also does this.
+author: SIEM project
+date: 2026-11-01
+tags:
+    - attack.persistence
+    - attack.t1136.001
+logsource:
+    product: linux
+    service: auth
+detection:
+    created:
+        Action: user-created
+    condition: created
+falsepositives:
+    - Installing a service.
+    - Planned administration.
+level: medium

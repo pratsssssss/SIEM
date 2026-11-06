@@ -1,0 +1,49 @@
+# Every rule is listed here, or validation fails. To disable a rule, set enabled: false.
+# severity overrides the rule's own level. interval_seconds is how often it runs, at least 30.
+# group_by turns many matching events into one alert per group_window_seconds. Fields must be safe for Kafka.
+defaults:
+  interval_seconds: 300
+  confidence: medium
+
+rules:
+  # Suspicious PowerShell
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f01, enabled: true, confidence: high, interval_seconds: 120}
+  # Encoded PowerShell
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f02, enabled: true, confidence: medium, interval_seconds: 120}
+  - {id: c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b04, enabled: true, confidence: high, interval_seconds: 120}
+  # Process relationships
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f03, enabled: true, confidence: high, interval_seconds: 120}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f04, enabled: true, confidence: high, interval_seconds: 120}
+  # Failed authentication
+  - {id: c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b01, enabled: true, confidence: medium, interval_seconds: 120}
+  - {id: c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b02, enabled: true, confidence: high, interval_seconds: 300}
+  - {id: c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b03, enabled: true, confidence: high, interval_seconds: 120}
+  # Privilege escalation
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f05, enabled: true, confidence: high}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f06, enabled: true, confidence: high}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f07, enabled: true, confidence: low, group_by: [host.name, user.name], group_window_seconds: 3600}
+  # New services
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f08, enabled: true, confidence: medium}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f09, enabled: true, confidence: high}
+  # Scheduled tasks
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0a, enabled: true, confidence: low}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0b, enabled: true, confidence: medium}
+  # Persistence
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0c, enabled: true, confidence: medium}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0d, enabled: true, confidence: medium}
+  # Defender
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0e, enabled: true, confidence: high, interval_seconds: 60}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f0f, enabled: true, confidence: high, interval_seconds: 60}
+  # Network
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f10, enabled: true, confidence: medium, group_by: [host.name, process.executable, destination.ip], group_window_seconds: 3600}
+  - {id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f11, enabled: true, confidence: medium}
+  - {id: c0a5f1d2-7e41-4c8b-8a10-1f2e3d4c5b05, enabled: true, confidence: medium, interval_seconds: 600}
+  # Linux host (WSL2). Evidence must be from a program journald confirms, which normalization enforces.
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c01, enabled: true, confidence: medium, interval_seconds: 120}
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c02, enabled: true, confidence: low, group_by: [host.name, user.name], group_window_seconds: 3600}
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c03, enabled: true, confidence: medium}
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c04, enabled: true, confidence: high, interval_seconds: 120}
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c05, enabled: true, confidence: medium}
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c06, enabled: true, confidence: high, interval_seconds: 120}
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c07, enabled: true, confidence: medium}
+  - {id: d3b07a10-5c1e-4f6a-9b2c-0e1f2a3b4c08, enabled: true, confidence: medium, interval_seconds: 120}

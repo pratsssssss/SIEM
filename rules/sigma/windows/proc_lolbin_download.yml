@@ -1,0 +1,34 @@
+title: Built-In Tool Used To Fetch A File
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f04
+status: experimental
+description: A Windows tool with another purpose was used to download a file.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.command-and-control
+    - attack.t1105
+    - attack.stealth
+    - attack.t1218
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    certutil:
+        Image|endswith: '\certutil.exe'
+        CommandLine|contains:
+            - 'urlcache'
+            - 'verifyctl'
+    bitsadmin:
+        Image|endswith: '\bitsadmin.exe'
+        CommandLine|contains:
+            - '/transfer'
+            - '/addfile'
+    mshta:
+        Image|endswith: '\mshta.exe'
+        CommandLine|contains:
+            - 'http://'
+            - 'https://'
+    condition: certutil or bitsadmin or mshta
+falsepositives:
+    - Administrators fetching certificates or updates by hand.
+level: high

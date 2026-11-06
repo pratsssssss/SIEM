@@ -1,0 +1,24 @@
+# Correlation service. See docs/detection/incident-management.md.
+state_file: /home/linux/siem/data/correlation/correlator.db
+rules_file: /home/linux/siem/config/correlator/rules.yml
+socket: /run/siem-correlator/control.sock
+kafka:
+  bootstrap: 127.0.0.1:9092
+  topic: siem-alerts
+opensearch:
+  url: https://127.0.0.1:9200
+  ca_file: /home/linux/siem/config/correlator/opensearch-ca.pem
+  login_file: /home/linux/siem/config/correlator/opensearch-correlator.json
+reports:
+  - /home/linux/siem/data/correlation/correlator.json
+  - /home/linux/siem/data/status/correlator/correlator.json
+  - "@SIEM_WINDOWS_MONITOR@/correlator.json"
+service:
+  # Timestamps closer than this cannot prove which event came first.
+  skew_seconds: 120
+  # How long to wait for enrichment before saying it is missing.
+  enrichment_wait_seconds: 1800
+  retry_seconds: 30
+  # Working data of alerts in no open incident is pruned after this. Incidents and audit are kept.
+  retention_days: 30
+  batch: 200

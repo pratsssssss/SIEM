@@ -1,0 +1,39 @@
+[Unit]
+Description=SIEM correlation and incident service
+# Nothing depends on this. Ingestion, detection and enrichment run with or without it.
+After=opensearch.service kafka.service
+PartOf=siem.target
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-correlator
+Group=siem-correlator
+# The control socket belongs to this group, so only analysts can open it.
+SupplementaryGroups=siem-analyst
+ExecStart=/usr/local/bin/siem-incident run
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=60
+RuntimeDirectory=siem-correlator
+RuntimeDirectoryMode=0755
+MemoryMax=192M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/correlation
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+ReadWritePaths=-/home/linux/siem/data/status/correlator
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=siem.target

@@ -1,0 +1,32 @@
+title: PowerShell Started With An Encoded Command
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f02
+status: experimental
+description: PowerShell was started with a Base64-encoded command, which hides what it runs from a casual reader.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.stealth
+    - attack.t1027
+    - attack.execution
+    - attack.t1059.001
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    shell:
+        - Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+        - OriginalFileName:
+            - 'PowerShell.EXE'
+            - 'pwsh.dll'
+    flag:
+        CommandLine|contains:
+            - ' -enc '
+            - ' -ec '
+            - ' -e '
+            - ' -encodedcommand '
+    condition: shell and flag
+falsepositives:
+    - Management agents that pass scripts in encoded form.
+level: medium

@@ -1,0 +1,24 @@
+title: Account Added To A Privileged Local Group
+id: 6a1f0c52-3b7e-4c41-9d21-0e5a7b1c4f05
+status: experimental
+description: An account was added to the local Administrators or Remote Desktop Users group.
+author: SIEM project
+date: 2026-10-31
+tags:
+    - attack.privilege-escalation
+    - attack.persistence
+    - attack.t1098
+logsource:
+    product: windows
+    service: security
+detection:
+    added:
+        EventID: 4732
+    group:
+        TargetSid:
+            - 'S-1-5-32-544'
+            - 'S-1-5-32-555'
+    condition: added and group
+falsepositives:
+    - Planned administration.
+level: high
