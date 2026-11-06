@@ -1,0 +1,42 @@
+[Unit]
+Description=SIEM Linux agent (Vector, reading this host's journal)
+# Reading the journal needs Kafka up to deliver. Kafka being down only fills the disk buffer, then pauses.
+After=kafka.service systemd-journald.service
+PartOf=siem.target
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=siem-linux-agent
+Group=siem-linux-agent
+# Reads the journal. It needs no other privilege: not adm, not root.
+SupplementaryGroups=systemd-journal
+# NAME and VERSION_ID, for host.os. Host name and machine id come from the installer.
+EnvironmentFile=/etc/os-release
+EnvironmentFile=/home/linux/siem/config/linux-agent/agent.env
+# Recovers what an earlier boot left unread. A failure here must not stop collection, hence the dash.
+ExecStartPre=-/usr/bin/python3 /usr/local/lib/siem/siem-linux-catchup.py
+ExecStartPre=/opt/vector/bin/vector validate --no-environment /home/linux/siem/config/linux-agent/vector-linux-agent.yaml
+ExecStart=/opt/vector/bin/vector --config /home/linux/siem/config/linux-agent/vector-linux-agent.yaml
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+MemoryMax=192M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/linux-agent
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=siem.target

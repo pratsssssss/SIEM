@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sysmon configuration for the SIEM's monitored Windows endpoint.
+  Pinned to Sysmon 15.22, schema 4.91. See docs/operations/sysmon-deployment.md.
+
+  Design: log every process, and be selective for high-volume events. Exclusions match full
+  paths wherever possible, so that a renamed binary elsewhere is still logged.
+  In Sysmon, an exclude rule wins over an include rule for the same event type.
+-->
+<Sysmon schemaversion="4.91">
+  <HashAlgorithms>SHA256,IMPHASH</HashAlgorithms>
+  <!-- No reverse DNS lookups: they add delay and create network traffic of their own. -->
+  <DnsLookup>False</DnsLookup>
+  <CheckRevocation>False</CheckRevocation>
+
+  <EventFiltering>
+
+    <!-- Event 1. All process creation, minus Windows Search workers and console hosts. -->
+    <RuleGroup name="process-create-noise" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <Rule name="search-protocol-host" groupRelation="and">
+          <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
+          <ParentImage condition="is">C:\Windows\System32\SearchIndexer.exe</ParentImage>
+        </Rule>
+        <Rule name="search-filter-host" groupRelation="and">
+          <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
+          <ParentImage condition="is">C:\Windows\System32\SearchIndexer.exe</ParentImage>
+        </Rule>
+        <Rule name="console-host" groupRelation="and">
+          <Image condition="is">C:\Windows\System32\conhost.exe</Image>
+          <CommandLine condition="contains">0xffffffff -ForceV1</CommandLine>
+        </Rule>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- Event 2. Timestomping of executable content in user-writable places. -->
+    <RuleGroup name="file-time" groupRelation="or">
+      <FileCreateTime onmatch="include">
+        <Rule name="timestomp-user-path" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\ProgramData\;\Windows\Temp\</TargetFilename>
+          <TargetFilename condition="end with">.exe</TargetFilename>
+        </Rule>
+        <Rule name="timestomp-user-dll" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\ProgramData\;\Windows\Temp\</TargetFilename>
+          <TargetFilename condition="end with">.dll</TargetFilename>
+        </Rule>
+      </FileCreateTime>
+    </RuleGroup>
+
+    <!-- Event 3. Connections by living-off-the-land tools, user-writable paths and admin ports. -->
+    <RuleGroup name="network" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <Image name="lolbin" condition="image">powershell.exe</Image>
+        <Image name="lolbin" condition="image">pwsh.exe</Image>
+        <Image name="lolbin" condition="image">cmd.exe</Image>
+        <Image name="lolbin" condition="image">rundll32.exe</Image>
+        <Image name="lolbin" condition="image">regsvr32.exe</Image>
+        <Image name="lolbin" condition="image">mshta.exe</Image>
+        <Image name="lolbin" condition="image">certutil.exe</Image>
+        <Image name="lolbin" condition="image">bitsadmin.exe</Image>
+        <Image name="lolbin" condition="image">wscript.exe</Image>
+        <Image name="lolbin" condition="image">cscript.exe</Image>
+        <Image name="lolbin" condition="image">msbuild.exe</Image>
+        <Image name="lolbin" condition="image">installutil.exe</Image>
+        <Image name="lolbin" condition="image">wmic.exe</Image>
+        <Image name="lolbin" condition="image">curl.exe</Image>
+        <Image name="lolbin" condition="image">ssh.exe</Image>
+        <Image name="user-writable" condition="contains any">\Users\;\ProgramData\;\Windows\Temp\</Image>
+        <DestinationPort name="admin-port" condition="is any">22;23;135;139;445;3389;5985;5986</DestinationPort>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- Event 5. Off. Process end adds volume without detection value here. -->
+    <RuleGroup name="process-terminate-off" groupRelation="or">
+      <ProcessTerminate onmatch="include"/>
+    </RuleGroup>
+
+    <!-- Event 6. Drivers, except those validly signed by Microsoft. -->
+    <RuleGroup name="driver-load" groupRelation="or">
+      <DriverLoad onmatch="exclude">
+        <Rule name="microsoft-signed-driver" groupRelation="and">
+          <Signature condition="begin with">Microsoft</Signature>
+          <SignatureStatus condition="is">Valid</SignatureStatus>
+        </Rule>
+      </DriverLoad>
+    </RuleGroup>
+
+    <!-- Event 7. Selective. Logging every image load would dominate the log. -->
+    <RuleGroup name="image-load" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <ImageLoaded name="credential-access-dll" condition="end with">\comsvcs.dll</ImageLoaded>
+        <ImageLoaded name="credential-access-dll" condition="end with">\vaultcli.dll</ImageLoaded>
+        <ImageLoaded name="credential-access-dll" condition="end with">\samlib.dll</ImageLoaded>
+        <ImageLoaded name="powershell-in-process" condition="end with">\System.Management.Automation.dll</ImageLoaded>
+        <ImageLoaded name="powershell-in-process" condition="end with">\System.Management.Automation.ni.dll</ImageLoaded>
+        <Rule name="unsigned-from-user-path" groupRelation="and">
+          <Signed condition="is">false</Signed>
+          <ImageLoaded condition="contains any">\Users\;\ProgramData\;\Windows\Temp\</ImageLoaded>
+        </Rule>
+      </ImageLoad>
+    </RuleGroup>
+    <RuleGroup name="image-load-expected" groupRelation="or">
+      <ImageLoad onmatch="exclude">
+        <Rule name="powershell-loading-its-own-engine" groupRelation="and">
+          <Image condition="is">C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Image>
+          <ImageLoaded condition="contains">System.Management.Automation</ImageLoaded>
+        </Rule>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!-- Event 8. Remote threads, minus core Windows processes that create them normally. -->
+    <RuleGroup name="remote-thread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!-- Event 9. Raw disk reads, used to bypass file locks, minus Defender's scanner. -->
+    <RuleGroup name="raw-access" groupRelation="or">
+      <RawAccessRead onmatch="exclude">
+        <Image condition="end with">\MsMpEng.exe</Image>
+      </RawAccessRead>
+    </RuleGroup>
+
+    <!-- Event 10. Only sensitive access to LSASS. -->
+    <RuleGroup name="lsass-access" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <Rule name="lsass-credential-access" groupRelation="and">
+          <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
+          <GrantedAccess condition="contains any">0x1010;0x1038;0x1410;0x1438;0x143a;0x1fffff</GrantedAccess>
+        </Rule>
+      </ProcessAccess>
+    </RuleGroup>
+    <RuleGroup name="lsass-access-expected" groupRelation="or">
+      <ProcessAccess onmatch="exclude">
+        <SourceImage condition="end with">\MsMpEng.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- Event 11. Persistence locations and script or executable drops. -->
+    <RuleGroup name="file-create" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename name="persistence" condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+        <TargetFilename name="persistence" condition="begin with">C:\Windows\System32\Tasks\</TargetFilename>
+        <TargetFilename name="persistence" condition="begin with">C:\Windows\System32\drivers\</TargetFilename>
+        <Rule name="drop-downloads-or-temp" groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Temp\;\Public\;\ProgramData\</TargetFilename>
+          <TargetFilename condition="end with">.exe</TargetFilename>
+        </Rule>
+        <TargetFilename name="script-drop" condition="end with">.ps1</TargetFilename>
+        <TargetFilename name="script-drop" condition="end with">.vbs</TargetFilename>
+        <TargetFilename name="script-drop" condition="end with">.hta</TargetFilename>
+        <TargetFilename name="script-drop" condition="end with">.bat</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!-- Events 12 to 14. Registry persistence and security controls. -->
+    <RuleGroup name="registry" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject name="run-key" condition="contains">\CurrentVersion\Run</TargetObject>
+        <TargetObject name="winlogon" condition="contains">\CurrentVersion\Winlogon\</TargetObject>
+        <TargetObject name="ifeo" condition="contains">\Image File Execution Options\</TargetObject>
+        <TargetObject name="lsa" condition="contains">\Control\Lsa\</TargetObject>
+        <TargetObject name="service-image" condition="end with">\ImagePath</TargetObject>
+        <TargetObject name="appinit" condition="contains">\AppInit_DLLs</TargetObject>
+        <TargetObject name="defender-exclusion" condition="contains">\Windows Defender\Exclusions\</TargetObject>
+        <TargetObject name="logging-policy" condition="contains">\Policies\Microsoft\Windows\PowerShell\</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- Event 15. Alternate data streams on executable downloads. -->
+    <RuleGroup name="file-stream" groupRelation="or">
+      <FileCreateStreamHash onmatch="include">
+        <TargetFilename name="download-stream" condition="contains">\Downloads\</TargetFilename>
+      </FileCreateStreamHash>
+    </RuleGroup>
+
+    <!-- Events 17 and 18. Known remote-execution pipe names only. Other names are not seen. -->
+    <RuleGroup name="pipes" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <PipeName name="remote-execution-pipe" condition="contains any">PSEXESVC;\msagent_;\postex_;\status_</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+    <!-- Events 19 to 21. All WMI persistence. These are rare and high value. -->
+    <RuleGroup name="wmi" groupRelation="or">
+      <WmiEvent onmatch="exclude"/>
+    </RuleGroup>
+
+    <!-- Event 22. Same tools as event 3. Full DNS logging is high volume on a workstation. -->
+    <RuleGroup name="dns" groupRelation="or">
+      <DnsQuery onmatch="include">
+        <Image name="lolbin" condition="image">powershell.exe</Image>
+        <Image name="lolbin" condition="image">pwsh.exe</Image>
+        <Image name="lolbin" condition="image">cmd.exe</Image>
+        <Image name="lolbin" condition="image">rundll32.exe</Image>
+        <Image name="lolbin" condition="image">regsvr32.exe</Image>
+        <Image name="lolbin" condition="image">mshta.exe</Image>
+        <Image name="lolbin" condition="image">certutil.exe</Image>
+        <Image name="lolbin" condition="image">bitsadmin.exe</Image>
+        <Image name="lolbin" condition="image">wscript.exe</Image>
+        <Image name="lolbin" condition="image">cscript.exe</Image>
+        <Image name="user-writable" condition="contains any">\Users\;\ProgramData\;\Windows\Temp\</Image>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!-- Event 23. Off. It archives deleted files to disk, which C: cannot afford. -->
+    <RuleGroup name="file-delete-off" groupRelation="or">
+      <FileDelete onmatch="include"/>
+    </RuleGroup>
+
+    <!-- Event 24. Off. It would store clipboard contents, including passwords. -->
+    <RuleGroup name="clipboard-off" groupRelation="or">
+      <ClipboardChange onmatch="include"/>
+    </RuleGroup>
+
+    <!-- Event 25. All process image tampering. -->
+    <RuleGroup name="tampering" groupRelation="or">
+      <ProcessTampering onmatch="exclude"/>
+    </RuleGroup>
+
+    <!-- Event 26. Off for now. Log-only deletion is a candidate after volume is measured. -->
+    <RuleGroup name="file-delete-detected-off" groupRelation="or">
+      <FileDeleteDetected onmatch="include"/>
+    </RuleGroup>
+
+    <!-- Events 27 and 28. Off. These block activity, and Sysmon is only observing here. -->
+    <RuleGroup name="file-block-exe-off" groupRelation="or">
+      <FileBlockExecutable onmatch="include"/>
+    </RuleGroup>
+    <RuleGroup name="file-block-shred-off" groupRelation="or">
+      <FileBlockShredding onmatch="include"/>
+    </RuleGroup>
+
+    <!-- Event 29. Executables written to download and temporary locations. -->
+    <RuleGroup name="file-exe-detected" groupRelation="or">
+      <FileExecutableDetected onmatch="include">
+        <TargetFilename name="exe-download-or-temp" condition="contains any">\Downloads\;\Temp\;\Public\</TargetFilename>
+      </FileExecutableDetected>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

@@ -1,0 +1,8 @@
+[Unit]
+Description=Runs the SIEM Kafka expiry check
+PartOf=siem.target
+
+[Timer]
+OnActiveSec=2min
+OnUnitActiveSec=15min
+Unit=siem-kafka-expiry-check.service

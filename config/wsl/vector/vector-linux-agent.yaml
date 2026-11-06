@@ -1,0 +1,272 @@
+# WSL2 Linux Vector agent. See docs/pipeline/wsl2-linux-telemetry.md, ADR-0014, ADR-0006 and ADR-0008.
+#
+# This is the Linux counterpart of config/windows/vector/vector-agent.yaml, and it holds the same
+# guarantees: redaction, then sealing, then a whole-event MAC, ahead of the disk buffer. It uses its own
+# key, k2, which the verifier accepts for Linux channels only. It must stay a separate process: the
+# aggregator holds no field keys (D23).
+#
+# Journal fields come in two kinds. _UID, _EXE, _COMM, _CMDLINE and _TRANSPORT are added by journald and
+# cannot be set by the writer. SYSLOG_IDENTIFIER and MESSAGE are whatever a program chose to write, so
+# nothing downstream trusts them alone.
+data_dir: "/home/linux/siem/data/linux-agent"
+
+api:
+  enabled: false
+
+secret:
+  field_keys:
+    type: file
+    path: "/home/linux/siem/config/linux-agent/field-keys.json"
+
+sources:
+  # Vector refuses current_boot_only: false on systemd 250 to 257, so this reads the current boot, and
+  # deploy/wsl/siem-linux-catchup.py recovers an earlier one through journal_catchup below. The SIEM's own
+  # services are left out, because their logs would feed back into this pipeline. systemd's records
+  # about them stay, and those are what matter.
+  journal:
+    type: journald
+    # Without this, entries carry no cursor, so they have no identity.
+    emit_cursor: true
+    since_now: true
+    batch_size: 64
+    exclude_units:
+      - kafka.service
+      - opensearch.service
+      - vector.service
+      - seal-verifier.service
+      - siem-detector.service
+      - siem-enricher.service
+      - siem-enricher-feeds.service
+      - siem-correlator.service
+      - siem-asset.service
+      - siem-linux-agent.service
+      - siem-linux-health.service
+      - siem-disk-guard.service
+      - siem-kafka-expiry-check.service
+      # Monitoring must not create the events it monitors.
+      - siem-health.service
+      - siem-health-watchdog.service
+
+  # Entries from an earlier boot, in journalctl's own JSON. Same fields, same cursors, same protection.
+  journal_catchup:
+    type: file
+    include: ["/home/linux/siem/data/linux-agent/catchup/*.ndjson"]
+    read_from: beginning
+    fingerprint:
+      strategy: device_and_inode
+    max_line_bytes: 262144
+    remove_after_secs: 604800
+
+  # Whole lines, in time order, one per package action. A status line carries nothing more.
+  dpkg:
+    type: file
+    include: ["/var/log/dpkg.log"]
+    read_from: end
+    fingerprint:
+      strategy: device_and_inode
+    max_line_bytes: 4096
+    ignore_older_secs: 1209600
+
+  vector_metrics:
+    type: internal_metrics
+    scrape_interval_secs: 15
+
+transforms:
+  catchup_parsed:
+    type: remap
+    inputs: [journal_catchup]
+    drop_on_error: true
+    drop_on_abort: true
+    source: |
+      entry = object!(parse_json!(string!(.message), max_depth: 4))
+      entry.message = entry.MESSAGE
+      entry.timestamp = from_unix_timestamp!(to_int!(entry.__REALTIME_TIMESTAMP), unit: "microseconds")
+      . = entry
+
+  # The kernel writes thousands of hardware and driver lines. Warnings and worse are kept.
+  journal_keep:
+    type: filter
+    inputs: [journal, catchup_parsed]
+    condition: |
+      !(._TRANSPORT == "kernel" && (to_int(.PRIORITY) ?? 7) > 4)
+
+  dpkg_keep:
+    type: filter
+    inputs: [dpkg]
+    condition: |
+      match(string(.message) ?? "", r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} (install|upgrade|remove|purge) ')
+
+  # Assigns identity, keeps named fields only, redacts and seals. Any runtime error reroutes to
+  # protect_failed, so plaintext can never reach the sink.
+  protect:
+    type: remap
+    inputs: [journal_keep, dpkg_keep]
+    drop_on_error: true
+    drop_on_abort: true
+    reroute_dropped: true
+    source: |
+      original = .
+      host_name = get_env_var!("SIEM_LINUX_HOST")
+      journal = exists(original.__CURSOR)
+      ed = {}
+      ch = "linux-package"
+      uid = ""
+      rid = ""
+      text = null
+      command = null
+      if journal {
+        ch = "linux-journal"
+        cursor = string!(original.__CURSOR)
+        machine = string!(original._MACHINE_ID)
+        uid = sha2(join!(["linux-journal", machine, cursor], "|"), variant: "SHA-256")
+        rid = to_string!(original.__REALTIME_TIMESTAMP)
+        ed.Cursor = cursor
+        ed.HostId = slice!(sha2("linux_machine_id:" + downcase(machine), variant: "SHA-256"), 0, 32)
+        # Only these fields leave the host. Anything else a program adds to its entry stays behind.
+        for_each({"Identifier": "SYSLOG_IDENTIFIER", "Comm": "_COMM", "Exe": "_EXE", "Pid": "_PID", "Uid": "_UID", "Gid": "_GID", "Transport": "_TRANSPORT", "Unit": "_SYSTEMD_UNIT",
+                  "BootId": "_BOOT_ID", "Priority": "PRIORITY", "Facility": "SYSLOG_FACILITY", "TargetUnit": "UNIT", "UnitResult": "UNIT_RESULT", "JobType": "JOB_TYPE", "JobResult": "JOB_RESULT"}) -> |name, field| {
+          value = get(original, [string!(field)]) ?? null
+          if is_string(value) || is_integer(value) {
+            ed = set!(ed, [name], truncate(to_string!(value), 256))
+          }
+        }
+        text = original.message
+        command = original._CMDLINE
+      } else {
+        line = string!(original.message)
+        machine = get_env_var!("SIEM_LINUX_MACHINE")
+        uid = sha2("linux-package|" + machine + "|" + line, variant: "SHA-256")
+        stamp = parse_timestamp!(slice!(line, 0, 19), "%Y-%m-%d %H:%M:%S", timezone: "UTC")
+        .timestamp = stamp
+        rid = to_string!(to_unix_timestamp(stamp))
+        ed.Identifier = "dpkg"
+        ed.HostId = slice!(sha2("linux_machine_id:" + downcase(machine), variant: "SHA-256"), 0, 32)
+        text = line
+      }
+      # A journal message that is not valid text arrives as a list of bytes.
+      if !is_string(text) && text != null { text = encode_json(text) }
+      if !is_string(command) { command = null }
+
+      enc_key = decode_base16!("SECRET[field_keys.k2_enc]")
+      mac_key = decode_base16!("SECRET[field_keys.k2_mac]")
+      id = "1"
+      sealed = {}
+      tags = []
+      truncated = {}
+      for_each({"Message": text, "CommandLine": command}) -> |name, raw| {
+        if raw != null && raw != "" {
+          n = string!(raw)
+          n = replace_with(n, r'(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----') -> |m| { "[REDACTED:pem]" }
+          n = replace_with(n, r'(?i)((?:^|[\s"\x27])(?:--?|/)(?:password|passwd|pwd|pass|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret)(?:[=:]|\s+))("[^"]*"|\x27[^\x27]*\x27|[^\s\x24(][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:arg]" }
+          n = replace_with(n, r'(?i)(\b(?:mysql|mysqldump|mariadb)(?:\.exe)?"?\s(?:[^|&\n]*\s)?-p)([^\s]+)') -> |m| { string!(m.captures[0]) + "[REDACTED:arg]" }
+          n = replace_with(n, r'(?i)(\bnet1?(?:\.exe)?"?\s+use\s+(?:[a-z*]:\s+)?\\\\[^\s]+\s+)([^\s/*][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:net]" }
+          n = replace_with(n, r'(?i)(\bnet1?(?:\.exe)?"?\s+use\b[^|&\n]*/user:[^\s]+\s+)([^\s/*][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:net]" }
+          n = replace_with(n, r'(?i)(\bnet1?(?:\.exe)?"?\s+user\s+[^\s/]+\s+)([^\s/*][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:net]" }
+          n = replace_with(n, r'(?i)(\b[a-z][a-z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)') -> |m| { string!(m.captures[0]) + "[REDACTED:url]" + string!(m.captures[2]) }
+          n = replace_with(n, r'(?i)(\bcurl(?:\.exe)?"?\s(?:[^|&\n]*\s)?(?:-u|--user)\s+"?[^\s:"]+:)([^\s"]+)') -> |m| { string!(m.captures[0]) + "[REDACTED:basic]" }
+          n = replace_with(n, r'(?i)(authorization["\x27]?\s*[:=]\s*["\x27]?(?:(?:bearer|basic|token)\s+)?)([a-z0-9._~+/=-]{8,})') -> |m| { string!(m.captures[0]) + "[REDACTED:header]" }
+          n = replace_with(n, r'(?i)(ConvertTo-SecureString\s+(?:-String\s+)?)("[^"]*"|\x27[^\x27]*\x27)') -> |m| { string!(m.captures[0]) + "[REDACTED:secure]" }
+          n = replace_with(n, r'(?i)(\x24?[a-z0-9_.:-]*(?:password|passwd|pwd|secret|token|api[-_]?key|apikey)[a-z0-9_]*["\x27]?\s*[:=]\s*)("[^"]+"|\x27[^\x27]+\x27)') -> |m| { string!(m.captures[0]) + "[REDACTED:assign]" }
+          n = replace_with(n, r'(?i)(\b(?:set|export)\s+"?[a-z0-9_]*(?:pass|secret|token|api_?key)[a-z0-9_]*=)([^\s"]+)') -> |m| { string!(m.captures[0]) + "[REDACTED:env]" }
+          n = replace_with(n, r'\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,})\b') -> |m| { "[REDACTED:token]" }
+          n = replace_with(n, r'\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b') -> |m| { "[REDACTED:jwt]" }
+          n = replace_with(n, r'(?i)\b(IDENTIFIED\s+BY\s+)(\S+)') -> |m| { string!(m.captures[0]) + "[REDACTED:arg]" }
+          n = replace_with(n, r'(?i)(\bsshpass\s+-p\s*)(\S+)') -> |m| { string!(m.captures[0]) + "[REDACTED:arg]" }
+          n = replace_with(n, r'(?i)(\bchpasswd\b.*?:)(\S+)') -> |m| { string!(m.captures[0]) + "[REDACTED:arg]" }
+          n = replace_with(n, r'\$(?:1|2[aby]|5|6|y|gy)\$[./A-Za-z0-9$]{8,}') -> |m| { "[REDACTED:hash]" }
+          # The journal stores a printed key one line per entry, so the PEM rule above never sees it whole.
+          n = replace_with(n, r'^\s*[A-Za-z0-9+/]{40,512}={0,2}\s*$') -> |m| { "[REDACTED:blob]" }
+          for_each(parse_regex_all!(n, r'\[REDACTED:(?P<tag>[a-z]+)\]')) -> |_i, m| { tags = push(tags, m.tag) }
+
+          # Bounded, so that both sealed fields fit below Kafka's message limit.
+          size = length(n)
+          if size > 65536 {
+            n = slice!(n, 0, 65536)
+            truncated = set!(truncated, [name], size)
+          }
+
+          iv = random_bytes!(16)
+          iv64 = encode_base64(iv)
+          ct64 = encode_base64(encrypt!(n, "AES-256-CTR-BE", enc_key, iv))
+          aad = encode_json(["siem-d22-v1", "k2", uid, ch, id, rid, name, iv64, ct64])
+          sealed = set!(sealed, [name], {"k": "k2", "iv": iv64, "ct": ct64, "mac": encode_base64(hmac(aad, mac_key, "SHA-256"))})
+        }
+      }
+
+      # Only what is built here goes on. The journal entry itself stops at this transform.
+      event = {"event_uid": uid, "channel": ch, "event_id": 1, "record_id": rid, "computer": host_name, "provider_name": ed.Identifier, "timestamp": .timestamp,
+               "level": original.PRIORITY, "event_data": ed,
+               "labels": {"event_id_basis": "source_record", "source_role": "wsl_infrastructure", "protection": "d22-v1", "os_name": get_env_var("NAME") ?? null, "os_version": get_env_var("VERSION_ID") ?? null}}
+      if !is_empty(sealed) { event.sealed = sealed }
+      if !is_empty(tags) { event.labels.redactions = unique(tags) }
+      if !is_empty(truncated) { event.labels.truncated = truncated }
+      . = compact(event, recursive: false, null: true, object: false, array: false, string: false, nullish: false)
+
+  # Fail closed. Keeps the fact that an entry was written, and nothing that could hold a secret.
+  protect_failed:
+    type: remap
+    inputs: ["protect.dropped"]
+    source: |
+      realtime = to_string(.__REALTIME_TIMESTAMP) ?? "0"
+      if !match(realtime, r'^[0-9]{1,20}$') { realtime = "0" }
+      . = {"event_uid": uuid_v4(), "channel": "linux-journal", "event_id": 1, "record_id": realtime, "computer": get_env_var("SIEM_LINUX_HOST") ?? "unknown", "timestamp": now(),
+           "labels": {"event_id_basis": "agent_generated", "source_role": "wsl_infrastructure", "protection": "d22-v1", "seal_failed": true}}
+
+  # D24, exactly as on Windows, with this agent's key. Must stay the only input to the sink, and the
+  # last step before the disk buffer.
+  envelope:
+    type: remap
+    inputs: [protect, protect_failed]
+    drop_on_error: true
+    drop_on_abort: true
+    reroute_dropped: true
+    source: |
+      uid = string!(.event_uid)
+      body = encode_json(.)
+      if length(encode_json(body)) > 900000 {
+        .labels.oversized = true
+        .event_data = {}
+        del(.sealed)
+        body = encode_json(.)
+      }
+      mac = hmac("siem-event-v1|k2|" + body, decode_base16!("SECRET[field_keys.k2_mac]"), "SHA-256")
+      . = {"v": "siem-event-v1", "k": "k2", "event_uid": uid, "body": body, "mac": encode_base64(mac)}
+
+  # Carries no content and no MAC, so the verifier records it as a visible dead letter.
+  envelope_failed:
+    type: remap
+    inputs: ["envelope.dropped"]
+    source: |
+      . = {"v": "siem-event-v1", "failed": true}
+
+sinks:
+  kafka_raw:
+    type: kafka
+    inputs: [envelope, envelope_failed]
+    bootstrap_servers: "127.0.0.1:9092"
+    topic: siem-raw-logs
+    key_field: event_uid
+    compression: lz4
+    healthcheck:
+      enabled: false
+    encoding:
+      codec: json
+    acknowledgements:
+      enabled: true
+    # 0 means never give up. A timed-out send is removed from the disk buffer and lost.
+    message_timeout_ms: 0
+    librdkafka_options:
+      "acks": "all"
+      "queue.buffering.max.messages": "2000"
+      "queue.buffering.max.kbytes": "8192"
+    # When this fills, the journal cursor stops moving, and the journal itself holds what follows.
+    buffer:
+      type: disk
+      max_size: 268435488
+      when_full: block
+
+  # Counts only. Loopback, so nothing beyond this host can read it.
+  metrics:
+    type: prometheus_exporter
+    inputs: [vector_metrics]
+    address: "127.0.0.1:9597"

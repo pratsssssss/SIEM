@@ -1,0 +1,30 @@
+[Unit]
+Description=SIEM Vector aggregator
+After=kafka.service opensearch.service seal-verifier.service
+PartOf=siem.target
+# The disk guard writes this file to hold ingestion after a storage limit.
+ConditionPathExists=!/home/linux/siem/data/monitor/ingest-stopped
+
+[Service]
+User=vector
+Group=vector
+ExecStartPre=/opt/vector/bin/vector validate --no-environment /home/linux/siem/config/vector/vector-aggregator.yaml
+ExecStart=/opt/vector/bin/vector --config /home/linux/siem/config/vector/vector-aggregator.yaml
+Restart=always
+RestartSec=5
+TimeoutStopSec=90
+MemoryMax=1G
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/vector
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=siem.target

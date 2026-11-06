@@ -1,0 +1,18 @@
+[Unit]
+Description=SIEM Linux source health
+
+[Service]
+Type=oneshot
+User=siem-linux-agent
+Group=siem-linux-agent
+SupplementaryGroups=systemd-journal
+Environment=SIEM_WINDOWS_MONITOR=@SIEM_WINDOWS_MONITOR@
+ExecStart=/usr/bin/python3 /usr/local/lib/siem/siem-linux-health.py
+SyslogIdentifier=siem-linux-health
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/linux-agent
+ReadWritePaths=-@SIEM_WINDOWS_MONITOR@
+ReadWritePaths=-/home/linux/siem/data/status/linux-agent
+PrivateTmp=true

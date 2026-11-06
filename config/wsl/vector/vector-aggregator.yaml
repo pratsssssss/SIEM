@@ -1,0 +1,807 @@
+# WSL2 Vector aggregator. See docs/operations/vector-aggregator-deployment.md, ADR-0006 (D22) and
+# ADR-0007.
+#
+# Kafka accepts input from anyone, so every message here is untrusted until the verifier has checked
+# it. This process holds no field keys. VRL has no constant-time compare, so the seal verifier does
+# all MAC checks, validation and decryption. from_verifier must stay the only input to sort_events,
+# and it must keep requiring a client certificate: that stops events bypassing the verifier.
+data_dir: "/home/linux/siem/data/vector"
+
+api:
+  enabled: false
+
+secret:
+  opensearch:
+    type: file
+    path: "/home/linux/siem/config/vector/opensearch-ingest.json"
+
+sources:
+  siem_raw:
+    type: kafka
+    bootstrap_servers: "127.0.0.1:9092"
+    group_id: siem-aggregator
+    topics: [siem-raw-logs]
+    auto_offset_reset: earliest
+    decoding:
+      codec: bytes
+    acknowledgements:
+      enabled: true
+
+  # Trusts only the CA that signed the verifier's client certificate. Answers only after the sinks
+  # have accepted the events, so the Kafka offset stays uncommitted until delivery.
+  from_verifier:
+    type: http_server
+    address: "127.0.0.1:9611"
+    path: "/v1/verified"
+    strict_path: true
+    method: POST
+    decoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    acknowledgements:
+      enabled: true
+    tls:
+      enabled: true
+      crt_file: "/home/linux/siem/config/vector/tls/vector.crt"
+      key_file: "/home/linux/siem/config/vector/tls/vector.key"
+      ca_file: "/home/linux/siem/config/vector/tls/verifier-ca.crt"
+      verify_certificate: true
+
+  vector_metrics:
+    type: internal_metrics
+    scrape_interval_secs: 15
+
+transforms:
+  # Parses nothing. The verifier authenticates the raw message before anything reads its content.
+  ingest:
+    type: remap
+    inputs: [siem_raw]
+    drop_on_error: true
+    drop_on_abort: true
+    reroute_dropped: true
+    source: |
+      raw = to_string(.message) ?? ""
+      kafka = {"topic": .topic, "partition": .partition, "offset": .offset}
+      size = length(raw)
+      digest = sha2(raw, variant: "SHA-256")
+      if size == 0 || size > 1000000 {
+        . = {"kafka": kafka, "dlq": {"reason": "size", "raw_sha256": digest, "raw_length": size}}
+      } else {
+        . = {"kafka": kafka, "raw": raw, "raw_sha256": digest, "raw_length": size}
+      }
+
+  # A runtime error above must still leave a visible record, with no content.
+  ingest_failed:
+    type: remap
+    inputs: ["ingest.dropped"]
+    source: |
+      raw = to_string(.message) ?? ""
+      . = {"kafka": {"topic": .topic, "partition": .partition, "offset": .offset},
+           "dlq": {"reason": "ingest_runtime_error", "raw_sha256": sha2(raw, variant: "SHA-256"), "raw_length": length(raw)}}
+
+  # http_server adds its own request path, which is not part of the event.
+  from_verifier_clean:
+    type: remap
+    inputs: [from_verifier]
+    source: |
+      del(.path)
+
+  sort_events:
+    type: route
+    inputs: [from_verifier_clean]
+    reroute_unmatched: false
+    route:
+      good: '!exists(.dlq) && !starts_with(string(.channel) ?? "", "linux-")'
+      linux: '!exists(.dlq) && starts_with(string(.channel) ?? "", "linux-")'
+      dead: 'exists(.dlq)'
+
+  # ECS normalization. Each map lists an ECS path and the Windows field it comes from, so a missing
+  # or empty field maps to nothing rather than failing. The verifier has already authenticated and
+  # validated these events. The opened event stays in winlog.event_data as one flat field.
+  normalize:
+    type: remap
+    inputs: ["sort_events.good"]
+    drop_on_error: true
+    drop_on_abort: true
+    reroute_dropped: true
+    source: |
+      src = .
+      ed = {}
+      if is_object(src.event_data) { ed = object!(src.event_data) }
+      ch = string(src.channel) ?? ""
+      id = to_string(src.event_id) ?? ""
+      when = parse_timestamp(string(src.timestamp) ?? "", "%+") ?? now()
+      sysmon = ch == "Microsoft-Windows-Sysmon/Operational"
+      powershell = ch == "Microsoft-Windows-PowerShell/Operational"
+      security = ch == "Security"
+
+      dataset = "windows.other"
+      if security { dataset = "windows.security" }
+      if ch == "System" { dataset = "windows.system" }
+      if sysmon { dataset = "windows.sysmon" }
+      if powershell { dataset = "windows.powershell" }
+      if ch == "Microsoft-Windows-Windows Defender/Operational" { dataset = "windows.defender" }
+      if ch == "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall" { dataset = "windows.firewall" }
+      if ch == "Microsoft-Windows-TaskScheduler/Operational" { dataset = "windows.taskscheduler" }
+
+      # category, type, action and outcome by source and event ID.
+      kinds = {
+        "windows.security": {
+          "1102": ["configuration", "deletion", "audit-log-cleared", "success"],
+          "4624": ["authentication", "start", "logged-in", "success"],
+          "4625": ["authentication", "start", "logon-failed", "failure"],
+          "4634": ["authentication", "end", "logged-out", "success"],
+          "4647": ["authentication", "end", "logged-out", "success"],
+          "4648": ["authentication", "start", "logged-in-explicit", "success"],
+          "4672": ["iam", "admin", "logged-in-special", "success"],
+          "4688": ["process", "start", "process-created", "success"],
+          "4697": ["configuration", "creation", "service-installed", "success"],
+          "4698": ["configuration", "creation", "scheduled-task-created", "success"],
+          "4699": ["configuration", "deletion", "scheduled-task-deleted", "success"],
+          "4700": ["configuration", "change", "scheduled-task-enabled", "success"],
+          "4701": ["configuration", "change", "scheduled-task-disabled", "success"],
+          "4702": ["configuration", "change", "scheduled-task-updated", "success"],
+          "4719": ["configuration", "change", "audit-policy-changed", "success"],
+          "4720": ["iam", "creation", "user-account-created", "success"],
+          "4722": ["iam", "change", "user-account-enabled", "success"],
+          "4723": ["iam", "change", "password-change-attempt", "unknown"],
+          "4724": ["iam", "change", "password-reset-attempt", "unknown"],
+          "4725": ["iam", "change", "user-account-disabled", "success"],
+          "4726": ["iam", "deletion", "user-account-deleted", "success"],
+          "4728": ["iam", "change", "group-member-added", "success"],
+          "4729": ["iam", "change", "group-member-removed", "success"],
+          "4732": ["iam", "change", "group-member-added", "success"],
+          "4733": ["iam", "change", "group-member-removed", "success"],
+          "4738": ["iam", "change", "user-account-changed", "success"],
+          "4740": ["iam", "change", "user-account-locked", "success"],
+          "4756": ["iam", "change", "group-member-added", "success"],
+          "4757": ["iam", "change", "group-member-removed", "success"],
+          "4776": ["authentication", "info", "credentials-validated", "unknown"],
+          "4798": ["iam", "info", "group-membership-enumerated", "success"],
+          "4799": ["iam", "info", "group-membership-enumerated", "success"],
+          "4946": ["configuration", "change", "firewall-rule-added", "success"],
+          "4947": ["configuration", "change", "firewall-rule-modified", "success"],
+          "4948": ["configuration", "change", "firewall-rule-deleted", "success"],
+          "5024": ["configuration", "start", "firewall-started", "success"],
+          "5025": ["configuration", "end", "firewall-stopped", "success"]
+        },
+        "windows.sysmon": {
+          "1": ["process", "start", "process-created", "success"],
+          "2": ["file", "change", "file-time-changed", "success"],
+          "3": ["network", "connection", "network-connection", "success"],
+          "4": ["process", "info", "sysmon-state-changed", "success"],
+          "5": ["process", "end", "process-terminated", "success"],
+          "6": ["driver", "start", "driver-loaded", "success"],
+          "7": ["library", "start", "image-loaded", "success"],
+          "8": ["process", "change", "remote-thread-created", "success"],
+          "9": ["file", "access", "raw-access-read", "success"],
+          "10": ["process", "access", "process-accessed", "success"],
+          "11": ["file", "creation", "file-created", "success"],
+          "12": ["registry", "change", "registry-object-changed", "success"],
+          "13": ["registry", "change", "registry-value-set", "success"],
+          "14": ["registry", "change", "registry-object-renamed", "success"],
+          "15": ["file", "creation", "file-stream-created", "success"],
+          "16": ["configuration", "change", "sysmon-configuration-changed", "success"],
+          "17": ["file", "creation", "pipe-created", "success"],
+          "18": ["file", "access", "pipe-connected", "success"],
+          "19": ["configuration", "creation", "wmi-filter", "success"],
+          "20": ["configuration", "creation", "wmi-consumer", "success"],
+          "21": ["configuration", "creation", "wmi-binding", "success"],
+          "22": ["network", "protocol", "dns-query", "success"],
+          "23": ["file", "deletion", "file-deleted", "success"],
+          "24": ["process", "info", "clipboard-changed", "success"],
+          "25": ["process", "change", "process-tampering", "success"],
+          "26": ["file", "deletion", "file-deleted", "success"],
+          "27": ["file", "denied", "file-block-executable", "failure"],
+          "28": ["file", "denied", "file-block-shredding", "failure"]
+        },
+        "windows.powershell": {
+          "4100": ["process", "info", "powershell-error", "failure"],
+          "4104": ["process", "info", "powershell-script-block", "success"]
+        },
+        "windows.system": {
+          "12": ["host", "start", "system-started", "success"],
+          "13": ["host", "end", "system-stopped", "success"],
+          "41": ["host", "end", "unexpected-reboot", "failure"],
+          "104": ["configuration", "deletion", "event-log-cleared", "success"],
+          "1074": ["host", "end", "shutdown-requested", "success"],
+          "6005": ["host", "start", "event-log-started", "success"],
+          "6006": ["host", "end", "event-log-stopped", "success"],
+          "7034": ["process", "end", "service-crashed", "failure"],
+          "7040": ["configuration", "change", "service-start-type-changed", "success"],
+          "7045": ["configuration", "creation", "service-installed", "success"]
+        },
+        "windows.defender": {
+          "1006": ["malware", "info", "malware-detected", "success"],
+          "1007": ["malware", "info", "malware-action-taken", "success"],
+          "1008": ["malware", "info", "malware-action-failed", "failure"],
+          "1116": ["malware", "info", "malware-detected", "success"],
+          "1117": ["malware", "info", "malware-action-taken", "success"],
+          "1118": ["malware", "info", "malware-action-failed", "failure"],
+          "1119": ["malware", "info", "malware-action-failed", "failure"],
+          "5001": ["configuration", "change", "realtime-protection-disabled", "success"],
+          "5007": ["configuration", "change", "defender-configuration-changed", "success"]
+        },
+        "windows.taskscheduler": {
+          "106": ["configuration", "creation", "scheduled-task-registered", "success"],
+          "140": ["configuration", "change", "scheduled-task-updated", "success"],
+          "141": ["configuration", "deletion", "scheduled-task-deleted", "success"]
+        }
+      }
+      kind = get(kinds, [dataset, id]) ?? null
+      category = "configuration"
+      type = "info"
+      action = "windows-event-" + id
+      outcome = "unknown"
+      if is_array(kind) {
+        category = string(get(kind, [0]) ?? "") ?? category
+        type = string(get(kind, [1]) ?? "") ?? type
+        action = string(get(kind, [2]) ?? "") ?? action
+        outcome = string(get(kind, [3]) ?? "") ?? outcome
+      }
+
+      # ECS path to Windows field. Later maps overwrite earlier ones.
+      map = {}
+      if security {
+        map = {"user.name": "SubjectUserName", "user.domain": "SubjectDomainName", "user.id": "SubjectUserSid", "process.executable": "ProcessName", "process.pid": "ProcessId", "group.name": "TargetUserName"}
+        if includes(["4624", "4625", "4634", "4647", "4648"], id) {
+          map = {"user.name": "TargetUserName", "user.domain": "TargetDomainName", "user.id": "TargetUserSid", "source.ip": "IpAddress", "source.port": "IpPort", "source.domain": "WorkstationName", "process.executable": "ProcessName", "process.pid": "ProcessId"}
+        }
+        if id == "4688" {
+          map = {"user.name": "SubjectUserName", "user.domain": "SubjectDomainName", "user.id": "SubjectUserSid", "process.executable": "NewProcessName", "process.pid": "NewProcessId", "process.command_line": "CommandLine", "process.parent.executable": "ParentProcessName", "process.parent.pid": "ProcessId"}
+        }
+        if id == "4776" { map = {"user.name": "TargetUserName", "source.domain": "Workstation"} }
+        if includes(["4720", "4722", "4723", "4724", "4725", "4726", "4738", "4740"], id) {
+          map = {"user.name": "SubjectUserName", "user.domain": "SubjectDomainName", "user.target.name": "TargetUserName", "user.target.domain": "TargetDomainName"}
+        }
+        if includes(["4728", "4729", "4732", "4733", "4756", "4757"], id) {
+          map = {"user.name": "SubjectUserName", "user.domain": "SubjectDomainName", "group.name": "TargetUserName", "group.domain": "TargetDomainName", "user.target.name": "MemberName"}
+        }
+        if includes(["4698", "4699", "4700", "4701", "4702"], id) {
+          map = {"user.name": "SubjectUserName", "user.domain": "SubjectDomainName", "file.path": "TaskName"}
+        }
+        if id == "4697" { map = {"user.name": "SubjectUserName", "user.domain": "SubjectDomainName", "service.name": "ServiceName", "file.path": "ServiceFileName"} }
+      }
+      if sysmon {
+        map = {"process.entity_id": "ProcessGuid", "process.pid": "ProcessId", "process.executable": "Image", "user.name": "User", "file.path": "TargetFilename", "registry.key": "TargetObject", "registry.data.strings": "Details", "dns.question.name": "QueryName"}
+        if id == "1" {
+          map = merge(map, {"process.command_line": "CommandLine", "process.working_directory": "CurrentDirectory", "process.parent.entity_id": "ParentProcessGuid", "process.parent.pid": "ParentProcessId", "process.parent.executable": "ParentImage", "process.parent.command_line": "ParentCommandLine", "process.pe.original_file_name": "OriginalFileName", "process.pe.product": "Product", "process.pe.description": "Description", "process.pe.company": "Company", "process.pe.file_version": "FileVersion", "winlog.logon.id": "LogonId"})
+        }
+        if id == "3" {
+          map = merge(map, {"network.transport": "Protocol", "source.ip": "SourceIp", "source.port": "SourcePort", "source.domain": "SourceHostname", "destination.ip": "DestinationIp", "destination.port": "DestinationPort", "destination.domain": "DestinationHostname"})
+        }
+        if id == "7" || id == "6" { map = merge(map, {"file.path": "ImageLoaded", "file.pe.original_file_name": "OriginalFileName"}) }
+        if id == "8" || id == "10" {
+          map = {"process.entity_id": "SourceProcessGuid", "process.pid": "SourceProcessId", "process.executable": "SourceImage", "user.name": "SourceUser", "process.target.entity_id": "TargetProcessGuid", "process.target.pid": "TargetProcessId", "process.target.executable": "TargetImage"}
+        }
+        if id == "17" || id == "18" { map = merge(map, {"file.name": "PipeName"}) }
+        if id == "22" { map = merge(map, {"dns.answers.data": "QueryResults"}) }
+      }
+      if powershell {
+        map = {"powershell.script_block.text": "ScriptBlockText", "powershell.script_block.id": "ScriptBlockId", "powershell.script_block.path": "Path", "powershell.context_info": "ContextInfo", "powershell.payload": "Payload"}
+      }
+      if ch == "System" {
+        map = {"service.name": "ServiceName", "file.path": "ImagePath"}
+        if id == "7040" || id == "7034" { map = {"service.name": "param1"} }
+      }
+      if dataset == "windows.defender" {
+        map = {"threat.indicator.name": "Threat Name", "threat.indicator.severity": "Severity Name", "file.path": "Path", "user.name": "Detection User", "process.executable": "Process Name"}
+      }
+      if dataset == "windows.firewall" { map = {"rule.name": "RuleName", "rule.id": "RuleId", "process.executable": "ApplicationPath"} }
+      if dataset == "windows.taskscheduler" { map = {"file.path": "TaskName", "user.name": "UserContext"} }
+
+      labels = {}
+      if is_object(src.labels) { labels = object!(src.labels) }
+      . = {
+        "siem_id": src.event_uid,
+        "@timestamp": format_timestamp!(when, "%Y-%m-%dT%H:%M:%S%.3fZ", timezone: "UTC"),
+        "siem_index": format_timestamp!(when, "%Y.%m.%d", timezone: "UTC"),
+        "ecs": {"version": "8.11.0"},
+        "agent": {"type": "vector", "name": src.computer},
+        "host": {"name": src.computer, "hostname": src.computer, "os": {"type": "windows", "family": "windows"}},
+        "event": {"id": src.event_uid, "kind": "event", "module": "windows", "dataset": dataset, "code": id, "provider": src.provider_name,
+                  "category": [category], "type": [type], "action": action, "outcome": outcome, "created": src.timestamp,
+                  "ingested": format_timestamp!(now(), "%Y-%m-%dT%H:%M:%S%.3fZ", timezone: "UTC")},
+        "log": {"level": src.level},
+        "labels": labels,
+        "siem": {"kafka": src.kafka},
+        "winlog": {"channel": src.channel, "computer_name": src.computer, "event_id": id, "record_id": to_string(src.record_id) ?? null,
+                   "provider_name": src.provider_name, "provider_guid": src.provider_guid, "task": src.task_name, "opcode": src.opcode_name,
+                   "keywords": src.keyword_names, "version": src.version, "user": {"identifier": src.user_id, "name": src.user_name},
+                   "activity_id": src.activity_id, "process": {"pid": src.process_id, "thread": {"id": src.thread_id}}, "event_data": ed}
+      }
+      if exists(src.xml) { .winlog.xml = src.xml }
+      if exists(src.user_data) { .winlog.user_data = encode_json(src.user_data) }
+
+      for_each(map) -> |target, from| {
+        value = get(ed, [string!(from)]) ?? null
+        if value != null && value != "" && value != "-" {
+          . = set!(., split(string!(target), "."), value)
+        }
+      }
+
+      # Numbers. Security writes process IDs in hex, and Sysmon in decimal.
+      for_each([["process", "pid"], ["process", "parent", "pid"], ["process", "target", "pid"]]) -> |_i, path| {
+        raw = get(., array!(path)) ?? null
+        if raw != null {
+          text = to_string(raw) ?? ""
+          number = 0
+          if starts_with(text, "0x") { number = parse_int(text) ?? -1 } else { number = to_int(text) ?? -1 }
+          if number >= 0 { . = set!(., array!(path), number) } else { . = remove!(., array!(path)) }
+        }
+      }
+      for_each([["source", "port"], ["destination", "port"]]) -> |_i, path| {
+        raw = get(., array!(path)) ?? null
+        if raw != null {
+          number = to_int(raw) ?? -1
+          if number > 0 && number <= 65535 { . = set!(., array!(path), number) } else { . = remove!(., array!(path)) }
+        }
+      }
+      # Only real addresses reach an ip field.
+      for_each(["source", "destination"]) -> |_i, side| {
+        address = get(., [side, "ip"]) ?? null
+        if address != null {
+          text = string(address) ?? ""
+          if !is_ipv4(text) && !is_ipv6(text) { . = remove!(., [side, "ip"]) }
+        }
+      }
+
+      # Names from paths and accounts. Set by path, because VRL fixed the shape of . above.
+      for_each([["process", "executable", "process", "name"], ["process", "parent", "executable", "process", "parent", "name"]]) -> |_i, spec| {
+        path = ["process", "executable"]
+        target = ["process", "name"]
+        if length(array!(spec)) == 6 {
+          path = ["process", "parent", "executable"]
+          target = ["process", "parent", "name"]
+        }
+        value = get(., path) ?? null
+        if is_string(value) {
+          parts = split(string!(value), "\\")
+          . = set!(., target, get(parts, [length(parts) - 1]) ?? null)
+        }
+      }
+      file_path = get(., ["file", "path"]) ?? null
+      if is_string(file_path) && (get(., ["file", "name"]) ?? null) == null {
+        parts = split(string!(file_path), "\\")
+        . = set!(., ["file", "name"], get(parts, [length(parts) - 1]) ?? null)
+      }
+      account = get(., ["user", "name"]) ?? null
+      if is_string(account) && contains(string!(account), "\\") {
+        parts = split(string!(account), "\\", limit: 2)
+        . = set!(., ["user", "domain"], parts[0])
+        . = set!(., ["user", "name"], parts[1])
+      }
+      if sysmon && id == "3" {
+        # Sysmon's Initiated field says which end started the connection.
+        direction = "ingress"
+        if (get(ed, ["Initiated"]) ?? "") == "true" { direction = "egress" }
+        . = set!(., ["network", "direction"], direction)
+        transport = get(., ["network", "transport"]) ?? null
+        if is_string(transport) { . = set!(., ["network", "transport"], downcase(string!(transport))) }
+      }
+      if security && includes(["4624", "4625"], id) {
+        logon = get(ed, ["LogonType"]) ?? null
+        if logon != null { . = set!(., ["winlog", "logon", "type"], logon) }
+      }
+      if sysmon && id == "1" {
+        hashes = get(ed, ["Hashes"]) ?? null
+        if is_string(hashes) {
+          for_each(split(string!(hashes), ",")) -> |_i, pair| {
+            piece = split(string!(pair), "=", limit: 2)
+            if length(piece) == 2 { . = set!(., ["process", "hash", downcase(string!(piece[0]))], piece[1]) }
+          }
+        }
+      }
+      . = compact(., recursive: true, null: true, object: true, array: false, string: false, nullish: false)
+
+  # ECS normalization for Linux. See docs/pipeline/wsl2-linux-telemetry.md. A claim about what a program
+  # did counts only if journald says that program wrote it: Exe comes from the kernel, while Identifier
+  # and the message text are whatever the writer chose. Anything else stays an unverified log line.
+  normalize_linux:
+    type: remap
+    inputs: ["sort_events.linux"]
+    drop_on_error: true
+    drop_on_abort: true
+    reroute_dropped: true
+    source: |
+      src = .
+      ed = {}
+      if is_object(src.event_data) { ed = object!(src.event_data) }
+      text = string(ed.Message) ?? ""
+      identifier = string(ed.Identifier) ?? ""
+      exe = string(ed.Exe) ?? ""
+      transport = string(ed.Transport) ?? ""
+      when = parse_timestamp(string(src.timestamp) ?? "", "%+") ?? now()
+      tools = {"sudo": ["/usr/bin/sudo"], "su": ["/usr/bin/su"], "runuser": ["/usr/sbin/runuser"], "sshd": ["/usr/sbin/sshd"], "login": ["/usr/bin/login"], "useradd": ["/usr/sbin/useradd"], "userdel": ["/usr/sbin/userdel"],
+               "usermod": ["/usr/sbin/usermod"], "groupadd": ["/usr/sbin/groupadd"], "groupdel": ["/usr/sbin/groupdel"], "groupmod": ["/usr/sbin/groupmod"], "gpasswd": ["/usr/bin/gpasswd"], "passwd": ["/usr/bin/passwd"], "chpasswd": ["/usr/sbin/chpasswd"], "chage": ["/usr/bin/chage"],
+               "CRON": ["/usr/sbin/cron"], "cron": ["/usr/sbin/cron"], "crontab": ["/usr/bin/crontab"], "systemd": ["/usr/lib/systemd/systemd"], "systemd-logind": ["/usr/lib/systemd/systemd-logind"]}
+      expected = get(tools, [identifier]) ?? null
+      verified = is_array(expected) && includes(array!(expected), exe)
+      known = is_array(expected)
+      # crontab exits before journald can read its path, so a real one never has Exe. Only the kernel's
+      # process name is left. A forger gains little: a false entry can raise an alert, and cannot hide one.
+      by_name = identifier == "crontab" && exe == "" && (string(ed.Comm) ?? "") == "crontab"
+      package = src.channel == "linux-package"
+
+      dataset = "linux.system"
+      if transport == "kernel" { dataset = "linux.kernel" }
+      if includes(["CRON", "cron", "crontab"], identifier) { dataset = "linux.cron" }
+      if includes(["sudo", "su", "runuser", "sshd", "login", "useradd", "userdel", "usermod", "groupadd", "groupdel", "groupmod", "gpasswd", "passwd", "chpasswd", "chage", "systemd-logind"], identifier) { dataset = "linux.auth" }
+      if package { dataset = "linux.package" }
+
+      action = "log-entry"
+      category = "host"
+      type = "info"
+      outcome = "unknown"
+      user = null
+      target = null
+      effective = null
+      group = null
+      source_ip = null
+      source_port = null
+      user_id = null
+      line_command = null
+      service = null
+
+      if package {
+        fields = parse_regex(text, r'^\S+ \S+ (?P<verb>\S+) (?P<name>\S+) (?P<old>\S+) (?P<new>\S+)') ?? null
+        if fields != null {
+          category = "package"
+          type = "change"
+          outcome = "success"
+          action = "package-" + string!(fields.verb)
+          if fields.verb == "install" { type = "installation"; action = "package-installed" }
+          if fields.verb == "upgrade" { action = "package-upgraded" }
+          if fields.verb == "remove" || fields.verb == "purge" { type = "deletion"; action = "package-removed" }
+          target = fields.name
+          ed = merge(ed, {"PackageVersion": fields.new, "PackagePreviousVersion": fields.old})
+        }
+      } else if verified || by_name {
+        if identifier == "sudo" {
+          line = parse_regex(text, r'^\s*(?P<user>\S+) : (?:(?P<problem>[^;]*?) ; )?TTY=\S+ ; PWD=.*? ; USER=(?P<runas>\S+) ;(?: GROUP=\S+ ;)?(?: TSID=\S+ ;)? COMMAND=(?P<command>.*)$') ?? null
+          if line != null {
+            user = line.user
+            effective = line.runas
+            line_command = line.command
+            category = "process"
+            type = "start"
+            action = "sudo-command"
+            outcome = "success"
+            if line.problem != null && line.problem != "" {
+              type = "denied"
+              outcome = "failure"
+              action = "sudo-auth-failed"
+              if contains(string!(line.problem), "NOT in sudoers") { action = "sudo-not-permitted" }
+              if contains(string!(line.problem), "not allowed") { action = "sudo-not-permitted" }
+            }
+          }
+        }
+        if identifier == "su" {
+          line = parse_regex(text, r'^(?P<failed>FAILED SU )?\(to (?P<target>\S+)\) (?P<user>\S+) on \S+') ?? null
+          if line != null {
+            user = line.user
+            effective = line.target
+            category = "authentication"
+            type = "start"
+            action = "su-session"
+            outcome = "success"
+            if line.failed != null && line.failed != "" { action = "su-failed"; outcome = "failure" }
+          }
+        }
+        if identifier == "useradd" {
+          line = parse_regex(text, r'^new user: name=(?P<name>[^,]+), UID=(?P<uid>\d+)') ?? null
+          if line != null { category = "iam"; type = "creation"; action = "user-created"; outcome = "success"; target = line.name; user_id = line.uid }
+        }
+        if identifier == "userdel" {
+          line = parse_regex(text, r'^delete user \x27(?P<name>[^\x27]+)\x27') ?? null
+          if line != null { category = "iam"; type = "deletion"; action = "user-deleted"; outcome = "success"; target = line.name }
+        }
+        if identifier == "groupadd" || identifier == "useradd" {
+          line = parse_regex(text, r'^new group: name=(?P<name>[^,]+), GID=') ?? null
+          if line != null { category = "iam"; type = "creation"; action = "group-created"; outcome = "success"; group = line.name }
+        }
+        if identifier == "groupdel" {
+          line = parse_regex(text, r'^(?:group|removed group) \x27(?P<name>[^\x27]+)\x27') ?? null
+          if line != null { category = "iam"; type = "deletion"; action = "group-deleted"; outcome = "success"; group = line.name }
+        }
+        if identifier == "usermod" || identifier == "useradd" {
+          line = parse_regex(text, r'^add \x27(?P<name>[^\x27]+)\x27 to group \x27(?P<group>[^\x27]+)\x27') ?? null
+          if line != null { category = "iam"; type = "change"; action = "group-member-added"; outcome = "success"; target = line.name; group = line.group }
+          line = parse_regex(text, r'^delete \x27(?P<name>[^\x27]+)\x27 from group \x27(?P<group>[^\x27]+)\x27') ?? null
+          if line != null { category = "iam"; type = "change"; action = "group-member-removed"; outcome = "success"; target = line.name; group = line.group }
+        }
+        if identifier == "gpasswd" {
+          line = parse_regex(text, r'^user (?P<name>\S+) added by (?P<by>\S+) to group (?P<group>\S+)') ?? null
+          if line != null { category = "iam"; type = "change"; action = "group-member-added"; outcome = "success"; user = line.by; target = line.name; group = line.group }
+        }
+        if identifier == "passwd" || identifier == "chpasswd" {
+          line = parse_regex(text, r'^password changed for (?P<name>\S+)') ?? null
+          if line != null { category = "iam"; type = "change"; action = "password-changed"; outcome = "success"; target = line.name }
+        }
+        if identifier == "sshd" {
+          line = parse_regex(text, r'^(?P<verdict>Accepted|Failed) (?P<method>\S+) for (?:invalid user )?(?P<user>\S+) from (?P<ip>\S+) port (?P<port>\d+)') ?? null
+          if line != null {
+            user = line.user
+            source_ip = line.ip
+            source_port = line.port
+            category = "authentication"
+            type = "start"
+            action = "ssh-login"
+            outcome = "success"
+            if line.verdict == "Failed" { action = "ssh-login-failed"; outcome = "failure" }
+          }
+        }
+        if identifier == "CRON" {
+          line = parse_regex(text, r'^\((?P<user>[^)]+)\) CMD \((?P<command>.*)\)$') ?? null
+          if line != null { category = "process"; type = "start"; action = "scheduled-task-run"; outcome = "success"; user = line.user; line_command = line.command }
+        }
+        if identifier == "crontab" {
+          line = parse_regex(text, r'^\((?P<user>[^)]+)\) (?P<verb>REPLACE|DELETE|EDIT|LIST) \((?P<target>[^)]+)\)') ?? null
+          if line != null {
+            user = line.user
+            target = line.target
+            category = "configuration"
+            outcome = "success"
+            type = "change"
+            action = "crontab-replaced"
+            if line.verb == "DELETE" { type = "deletion"; action = "crontab-deleted" }
+            if line.verb == "EDIT" { action = "crontab-edited" }
+            if line.verb == "LIST" { type = "access"; action = "crontab-listed" }
+          }
+        }
+        if identifier == "systemd-logind" {
+          line = parse_regex(text, r'^New session \S+ of user (?P<user>\S+?)\.?$') ?? null
+          if line != null { category = "session"; type = "start"; action = "session-opened"; outcome = "success"; user = line.user }
+        }
+        # pam_unix writes through the program that loaded it, so its lines fall under the same check.
+        pam = parse_regex(text, r'^pam_unix\((?P<service>[^:]+):(?P<kind>[a-z]+)\): (?P<rest>.*)$') ?? null
+        if pam != null {
+          ed = set!(ed, ["PamService"], pam.service)
+          rest = string!(pam.rest)
+          opened = parse_regex(rest, r'^session opened for user (?P<user>[^(\s]+)(?:\(uid=(?P<uid>\d+)\))?(?: by (?P<by>[^(\s]*)(?:\(uid=\d+\))?)?') ?? null
+          closed = parse_regex(rest, r'^session closed for user (?P<user>\S+)') ?? null
+          failed = parse_regex(rest, r'^authentication failure; logname=(?P<log>\S*) uid=(?P<uid>\d+) euid=\d+ tty=\S* ruser=(?P<ruser>\S*) rhost=(?P<rhost>\S*)(?:\s+user=(?P<user>\S+))?') ?? null
+          if opened != null { category = "session"; type = "start"; action = "session-opened"; outcome = "success"; effective = opened.user; user_id = opened.uid; user = opened.by }
+          if closed != null { category = "session"; type = "end"; action = "session-closed"; outcome = "success"; effective = closed.user }
+          if failed != null {
+            category = "authentication"
+            type = "start"
+            action = "pam-auth-failed"
+            outcome = "failure"
+            user = failed.ruser
+            if failed.ruser == null || failed.ruser == "" { user = failed.log }
+            target = failed.user
+            if is_ipv4(string(failed.rhost) ?? "") || is_ipv6(string(failed.rhost) ?? "") { source_ip = failed.rhost }
+          }
+        }
+        if identifier == "systemd" {
+          service = get(ed, ["TargetUnit"]) ?? null
+          if service != null {
+            result = string(get(ed, ["UnitResult"]) ?? "") ?? ""
+            job = string(get(ed, ["JobType"]) ?? "") ?? ""
+            done = string(get(ed, ["JobResult"]) ?? "") ?? ""
+            category = "process"
+            type = "info"
+            action = "service-event"
+            if job == "start" && done == "done" { type = "start"; action = "service-started"; outcome = "success" }
+            if job == "stop" && done == "done" { type = "end"; action = "service-stopped"; outcome = "success" }
+            if job == "restart" && done == "done" { type = "start"; action = "service-restarted"; outcome = "success" }
+            if result != "" && result != "success" { type = "end"; action = "service-failed"; outcome = "failure"; ed = set!(ed, ["ServiceResult"], result) }
+            if done == "failed" { type = "end"; action = "service-failed"; outcome = "failure" }
+          }
+        }
+      } else if known {
+        # A program wrote under a name that matters, and journald does not confirm it is that program.
+        action = "unverified-log-entry"
+      }
+
+      levels = {"0": "emergency", "1": "alert", "2": "critical", "3": "error", "4": "warning", "5": "notice", "6": "informational", "7": "debug"}
+      level = get(levels, [string(src.level) ?? "none"]) ?? null
+
+      labels = {}
+      if is_object(src.labels) { labels = object!(src.labels) }
+      os_name = get(labels, ["os_name"]) ?? null
+      os_version = get(labels, ["os_version"]) ?? null
+      labels = remove!(labels, ["os_name"])
+      labels = remove!(labels, ["os_version"])
+      if known && !verified { labels.attribution = "unverified" }
+      if by_name { labels.attribution = "process-name" }
+
+      process_id = to_int(string(ed.Pid) ?? "none") ?? null
+      journald = {"transport": ed.Transport, "cursor": ed.Cursor, "boot_id": ed.BootId, "unit": ed.Unit, "exe_verified": verified}
+      . = {
+        "siem_id": src.event_uid,
+        "@timestamp": format_timestamp!(when, "%Y-%m-%dT%H:%M:%S%.3fZ", timezone: "UTC"),
+        "siem_index": format_timestamp!(when, "%Y.%m.%d", timezone: "UTC"),
+        "ecs": {"version": "8.11.0"},
+        "agent": {"type": "vector", "name": "siem-linux-agent"},
+        "host": {"name": src.computer, "hostname": src.computer, "id": ed.HostId, "os": {"type": "linux", "family": "linux", "name": os_name, "version": os_version}},
+        "event": {"id": src.event_uid, "kind": "event", "module": "linux", "dataset": dataset, "provider": src.provider_name,
+                  "category": [category], "type": [type], "action": action, "outcome": outcome, "created": src.timestamp,
+                  "ingested": format_timestamp!(now(), "%Y-%m-%dT%H:%M:%S%.3fZ", timezone: "UTC")},
+        "log": {"level": level, "syslog": {"facility": {"code": to_int(string(ed.Facility) ?? "none") ?? null}}},
+        "labels": labels,
+        "siem": {"kafka": src.kafka},
+        "message": ed.Message,
+        "journald": journald,
+        "process": {"pid": process_id, "executable": ed.Exe, "name": ed.Comm, "user": {"id": ed.Uid}}
+      }
+      if line_command != null { . = set!(., ["process", "command_line"], line_command) } else if exists(ed.CommandLine) { . = set!(., ["process", "command_line"], ed.CommandLine) }
+      if user != null && user != "" { . = set!(., ["user", "name"], user) }
+      if user_id != null { . = set!(., ["user", "id"], user_id) }
+      if effective != null { . = set!(., ["user", "effective", "name"], effective) }
+      if target != null { . = set!(., ["user", "target", "name"], target) }
+      if group != null { . = set!(., ["group", "name"], group) }
+      if service != null { . = set!(., ["service", "name"], replace(string!(service), r'\.service$', "")) }
+      if package {
+        . = set!(., ["package", "name"], target)
+        . = remove!(., ["user"])
+        . = set!(., ["package", "version"], get(ed, ["PackageVersion"]) ?? null)
+        . = set!(., ["package", "previous_version"], get(ed, ["PackagePreviousVersion"]) ?? null)
+      }
+      if source_ip != null && (is_ipv4(string(source_ip) ?? "") || is_ipv6(string(source_ip) ?? "")) {
+        . = set!(., ["source", "ip"], source_ip)
+        port = to_int(source_port) ?? -1
+        if port > 0 && port <= 65535 { . = set!(., ["source", "port"], port) }
+      }
+      . = compact(., recursive: true, null: true, object: true, array: false, string: false, nullish: false)
+
+  # A failure here must still leave a visible record, with no content.
+  normalize_failed:
+    type: remap
+    inputs: ["normalize.dropped", "normalize_linux.dropped"]
+    source: |
+      . = {"kafka": .kafka, "dlq": {"reason": "normalize_error", "raw_sha256": "", "raw_length": 0},
+           "channel": to_string(.channel) ?? "", "event_id": to_string(.event_id) ?? "",
+           "record_id": to_string(.record_id) ?? "", "event_uid": to_string(.event_uid) ?? ""}
+
+  # Kafka coordinates identify a message, so that repeated garbage is still counted separately.
+  prepare_dead:
+    type: remap
+    inputs: ["sort_events.dead", normalize_failed]
+    source: |
+      .siem_index = format_timestamp!(now(), "%Y.%m.%d", timezone: "UTC")
+      .siem_id = sha2(encode_json(.kafka), variant: "SHA-256")
+
+sinks:
+  # 4xx is final in Vector, so the verifier answers 503 for every failure that should be retried.
+  to_verifier:
+    type: http
+    inputs: [ingest, ingest_failed]
+    uri: "https://127.0.0.1:9610/v1/verify"
+    method: post
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    compression: none
+    healthcheck:
+      enabled: false
+    acknowledgements:
+      enabled: true
+    batch:
+      max_events: 200
+      max_bytes: 8000000
+      timeout_secs: 1
+    request:
+      concurrency: 1
+      timeout_secs: 120
+    buffer:
+      type: memory
+      max_events: 2000
+      when_full: block
+    tls:
+      ca_file: "/home/linux/siem/config/vector/tls/verifier-ca.crt"
+      crt_file: "/home/linux/siem/config/vector/tls/vector.crt"
+      key_file: "/home/linux/siem/config/vector/tls/vector.key"
+      verify_certificate: true
+      verify_hostname: true
+
+  # Acknowledged only when OpenSearch accepts the batch, and a partial failure retries.
+  opensearch_events:
+    type: opensearch
+    inputs: [normalize]
+    endpoints: ["https://127.0.0.1:9200"]
+    mode: bulk
+    bulk:
+      action: index
+      index: "siem-windows-{{ siem_index }}"
+    id_key: siem_id
+    request_retry_partial: true
+    suppress_type_name: true
+    encoding:
+      except_fields: [siem_index, siem_id]
+    auth:
+      strategy: basic
+      user: "SECRET[opensearch.user]"
+      password: "SECRET[opensearch.password]"
+    tls:
+      ca_file: "/home/linux/siem/config/vector/tls/opensearch-ca.pem"
+      verify_certificate: true
+      verify_hostname: true
+    healthcheck:
+      enabled: false
+    acknowledgements:
+      enabled: true
+    batch:
+      # Matches the verifier batch. A larger value holds every batch for the 2 s timeout.
+      max_events: 200
+      timeout_secs: 2
+    buffer:
+      type: memory
+      max_events: 2000
+      when_full: block
+
+  # Its own sink and index family, so Windows events are written exactly as before.
+  opensearch_linux:
+    type: opensearch
+    inputs: [normalize_linux]
+    endpoints: ["https://127.0.0.1:9200"]
+    mode: bulk
+    bulk:
+      action: index
+      index: "siem-linux-{{ siem_index }}"
+    id_key: siem_id
+    request_retry_partial: true
+    suppress_type_name: true
+    encoding:
+      except_fields: [siem_index, siem_id]
+    auth:
+      strategy: basic
+      user: "SECRET[opensearch.user]"
+      password: "SECRET[opensearch.password]"
+    tls:
+      ca_file: "/home/linux/siem/config/vector/tls/opensearch-ca.pem"
+      verify_certificate: true
+      verify_hostname: true
+    healthcheck:
+      enabled: false
+    acknowledgements:
+      enabled: true
+    batch:
+      max_events: 200
+      timeout_secs: 2
+    buffer:
+      type: memory
+      max_events: 2000
+      when_full: block
+
+  # Ciphertext and routing facts only. The verifier enforces that before this point.
+  opensearch_dead:
+    type: opensearch
+    inputs: [prepare_dead]
+    endpoints: ["https://127.0.0.1:9200"]
+    mode: bulk
+    bulk:
+      action: index
+      index: "siem-deadletter-{{ siem_index }}"
+    id_key: siem_id
+    request_retry_partial: true
+    suppress_type_name: true
+    encoding:
+      except_fields: [siem_index, siem_id]
+    auth:
+      strategy: basic
+      user: "SECRET[opensearch.user]"
+      password: "SECRET[opensearch.password]"
+    tls:
+      ca_file: "/home/linux/siem/config/vector/tls/opensearch-ca.pem"
+      verify_certificate: true
+      verify_hostname: true
+    healthcheck:
+      enabled: false
+    acknowledgements:
+      enabled: true
+    batch:
+      max_events: 100
+      timeout_secs: 2
+    buffer:
+      type: memory
+      max_events: 2000
+      when_full: block
+
+  metrics:
+    type: prometheus_exporter
+    inputs: [vector_metrics]
+    address: "127.0.0.1:9599"

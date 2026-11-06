@@ -1,0 +1,8 @@
+[Unit]
+Description=Runs the SIEM Linux source health check
+PartOf=siem.target
+
+[Timer]
+OnActiveSec=2min
+OnUnitActiveSec=5min
+Unit=siem-linux-health.service

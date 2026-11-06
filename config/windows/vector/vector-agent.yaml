@@ -1,0 +1,294 @@
+# Windows Vector agent. See docs/operations/vector-agent-deployment.md and ADR-0006 (D22).
+#
+# read_existing_events must stay true: false can deliver nothing, with no error (issue #26117).
+# max_event_age_secs applies on every read, so it must exceed any likely outage.
+# Each channel has its own source, so an unreadable channel stops Vector loudly. A shared
+# source would skip it with only a warning.
+# More than 23 only_event_ids fails at runtime, and vector validate does not detect it.
+# The protect and envelope transforms must stay the only path to the sink, ahead of the disk buffer.
+# include_xml must stay on every source: protect rebuilds event_data from it, then removes it.
+data_dir: "C:/ProgramData/Vector/data"
+
+api:
+  enabled: false
+
+secret:
+  field_keys:
+    type: file
+    path: "C:/ProgramData/Vector/secrets/field-keys.json"
+
+sources:
+  win_security:
+    type: windows_event_log
+    channels: ["Security"]
+    read_existing_events: true
+    max_event_age_secs: 604800
+    # Log-clear event 1102 keeps its fields in UserData, which Vector does not parse.
+    include_xml: true
+    render_message: false
+    event_query: >-
+      *[System[(EventID>=4624 and EventID<=4625) or EventID=4634 or EventID=4647 or EventID=4648
+      or EventID=4672 or EventID=4688 or EventID=4697 or (EventID>=4698 and EventID<=4702)
+      or (EventID>=4719 and EventID<=4726) or (EventID>=4728 and EventID<=4733) or EventID=4738
+      or EventID=4740 or (EventID>=4756 and EventID<=4757) or EventID=4776 or EventID=4798
+      or EventID=4799 or EventID=1102 or EventID=4946 or EventID=4947 or EventID=4948
+      or EventID=5024 or EventID=5025]]
+
+  win_sysmon:
+    type: windows_event_log
+    channels: ["Microsoft-Windows-Sysmon/Operational"]
+    read_existing_events: true
+    max_event_age_secs: 604800
+    include_xml: true
+    render_message: false
+
+  win_powershell:
+    type: windows_event_log
+    channels: ["Microsoft-Windows-PowerShell/Operational"]
+    read_existing_events: true
+    max_event_age_secs: 604800
+    include_xml: true
+    render_message: false
+    only_event_ids: [4100, 4104]
+
+  win_defender:
+    type: windows_event_log
+    channels: ["Microsoft-Windows-Windows Defender/Operational"]
+    read_existing_events: true
+    max_event_age_secs: 604800
+    include_xml: true
+    render_message: false
+    only_event_ids: [1006, 1007, 1008, 1009, 1015, 1116, 1117, 1118, 1119, 2001, 2003, 3002, 5001, 5004, 5007, 5008, 5010, 5012, 5013]
+
+  win_firewall:
+    type: windows_event_log
+    channels: ["Microsoft-Windows-Windows Firewall With Advanced Security/Firewall"]
+    read_existing_events: true
+    max_event_age_secs: 604800
+    include_xml: true
+    render_message: false
+    only_event_ids: [2002, 2003, 2004, 2005, 2006, 2052, 2071, 2082, 2083, 2097, 2099]
+
+  win_tasks:
+    type: windows_event_log
+    channels: ["Microsoft-Windows-TaskScheduler/Operational"]
+    read_existing_events: true
+    max_event_age_secs: 604800
+    include_xml: true
+    render_message: false
+    only_event_ids: [106, 140, 141]
+
+  win_system:
+    type: windows_event_log
+    channels: ["System"]
+    read_existing_events: true
+    max_event_age_secs: 604800
+    # Log-clear event 104 keeps its fields in UserData.
+    include_xml: true
+    render_message: false
+    only_event_ids: [12, 13, 41, 104, 1074, 6005, 6006, 7034, 7040, 7045]
+
+  vector_metrics:
+    type: internal_metrics
+    scrape_interval_secs: 15
+
+transforms:
+  # D22. Assigns identity, removes duplicates, redacts, caps and seals restricted fields.
+  # Any runtime error reroutes to protect_failed, so plaintext can never reach the sink.
+  protect:
+    type: remap
+    inputs: ["win_*"]
+    drop_on_error: true
+    drop_on_abort: true
+    reroute_dropped: true
+    source: |
+      ch = string!(.channel)
+      id = to_string!(.event_id)
+      rid = to_string!(.record_id)
+      # Stable identity from the design: computer, channel, record ID and event time.
+      uid = sha2(join!([to_string!(.computer), ch, rid, to_string!(.timestamp)], "|"), variant: "SHA-256")
+      .event_uid = uid
+      .labels.event_id_basis = "source_record"
+      .labels.source_role = "windows_endpoint"
+      .labels.protection = "d22-v1"
+
+      ed = {}
+      if exists(.event_data) { ed = object!(.event_data) }
+
+      # Vector 0.61.0 loses XML entities and the spaces beside them from event_data, so "a & b"
+      # arrives as "ab". The raw XML is exact, so named fields are rebuilt from it, ahead of
+      # redaction. If it cannot be parsed, Vector's copy is kept and the event is labelled.
+      # An XML parser turns CRLF into LF, unless the CR is a character reference.
+      if is_string(.xml) {
+        tree, xml_error = parse_xml(replace(string!(.xml), "\r", "&#13;"), include_attr: true, attr_prefix: "@", text_key: "text", always_use_text_key: true, trim: false, parse_bool: false, parse_null: false, parse_number: false)
+        if xml_error != null {
+          .labels.xml_fallback = true
+        } else {
+          rows = get!(tree, ["Event", "EventData", "Data"])
+          if !is_array(rows) { rows = [rows] }
+          for_each(array!(rows)) -> |_index, row| {
+            if is_object(row) {
+              name = get!(row, ["@Name"])
+              text = get!(row, ["text"])
+              if is_string(name) && is_string(text) && text != "" {
+                ed = set!(ed, [string!(name)], text)
+              }
+            }
+          }
+        }
+      }
+
+      # message can copy event data, and xml duplicates every field.
+      del(.message)
+      if !((ch == "Security" && id == "1102") || (ch == "System" && id == "104")) {
+        del(.xml)
+      }
+
+      sysmon = ch == "Microsoft-Windows-Sysmon/Operational"
+      powershell = ch == "Microsoft-Windows-PowerShell/Operational"
+      fields = []
+      if sysmon && id == "1" { fields = ["CommandLine", "ParentCommandLine"] }
+      if sysmon && id == "13" { fields = ["Details"] }
+      if sysmon && id == "19" { fields = ["Query"] }
+      if sysmon && id == "20" { fields = ["Destination"] }
+      if powershell && id == "4104" { fields = ["ScriptBlockText"] }
+      if powershell && id == "4100" { fields = ["ContextInfo", "Payload", "UserData"] }
+      if ch == "Security" && id == "4688" { fields = ["CommandLine"] }
+      if ch == "Security" && id == "4697" { fields = ["ServiceFileName"] }
+      if ch == "System" && id == "7045" { fields = ["ImagePath"] }
+
+      if (sysmon || powershell) && exists(.string_inserts) {
+        ed = set!(ed, ["_string_inserts"], encode_json(.string_inserts))
+        del(.string_inserts)
+        fields = push(fields, "_string_inserts")
+      }
+
+      enc_key = decode_base16!("SECRET[field_keys.k1_enc]")
+      mac_key = decode_base16!("SECRET[field_keys.k1_mac]")
+      sealed = {}
+      tags = []
+      truncated = {}
+      for_each(fields) -> |_index, field| {
+        name = string!(field)
+        raw = get!(ed, [name])
+        if raw != null && raw != "" {
+          n = to_string!(raw)
+          n = replace_with(n, r'(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----') -> |m| { "[REDACTED:pem]" }
+          n = replace_with(n, r'(?i)((?:^|[\s"\x27])(?:--?|/)(?:password|passwd|pwd|pass|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret)(?:[=:]|\s+))("[^"]*"|\x27[^\x27]*\x27|[^\s\x24(][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:arg]" }
+          n = replace_with(n, r'(?i)(\b(?:mysql|mysqldump|mariadb)(?:\.exe)?"?\s(?:[^|&\n]*\s)?-p)([^\s]+)') -> |m| { string!(m.captures[0]) + "[REDACTED:arg]" }
+          n = replace_with(n, r'(?i)(\bnet1?(?:\.exe)?"?\s+use\s+(?:[a-z*]:\s+)?\\\\[^\s]+\s+)([^\s/*][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:net]" }
+          n = replace_with(n, r'(?i)(\bnet1?(?:\.exe)?"?\s+use\b[^|&\n]*/user:[^\s]+\s+)([^\s/*][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:net]" }
+          n = replace_with(n, r'(?i)(\bnet1?(?:\.exe)?"?\s+user\s+[^\s/]+\s+)([^\s/*][^\s]*)') -> |m| { string!(m.captures[0]) + "[REDACTED:net]" }
+          n = replace_with(n, r'(?i)(\b[a-z][a-z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)') -> |m| { string!(m.captures[0]) + "[REDACTED:url]" + string!(m.captures[2]) }
+          n = replace_with(n, r'(?i)(\bcurl(?:\.exe)?"?\s(?:[^|&\n]*\s)?(?:-u|--user)\s+"?[^\s:"]+:)([^\s"]+)') -> |m| { string!(m.captures[0]) + "[REDACTED:basic]" }
+          n = replace_with(n, r'(?i)(authorization["\x27]?\s*[:=]\s*["\x27]?(?:(?:bearer|basic|token)\s+)?)([a-z0-9._~+/=-]{8,})') -> |m| { string!(m.captures[0]) + "[REDACTED:header]" }
+          n = replace_with(n, r'(?i)(ConvertTo-SecureString\s+(?:-String\s+)?)("[^"]*"|\x27[^\x27]*\x27)') -> |m| { string!(m.captures[0]) + "[REDACTED:secure]" }
+          n = replace_with(n, r'(?i)(\x24?[a-z0-9_.:-]*(?:password|passwd|pwd|secret|token|api[-_]?key|apikey)[a-z0-9_]*["\x27]?\s*[:=]\s*)("[^"]+"|\x27[^\x27]+\x27)') -> |m| { string!(m.captures[0]) + "[REDACTED:assign]" }
+          n = replace_with(n, r'(?i)(\b(?:set|export)\s+"?[a-z0-9_]*(?:pass|secret|token|api_?key)[a-z0-9_]*=)([^\s"]+)') -> |m| { string!(m.captures[0]) + "[REDACTED:env]" }
+          n = replace_with(n, r'\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,})\b') -> |m| { "[REDACTED:token]" }
+          n = replace_with(n, r'\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b') -> |m| { "[REDACTED:jwt]" }
+          for_each(parse_regex_all!(n, r'\[REDACTED:(?P<tag>[a-z]+)\]')) -> |_i, m| { tags = push(tags, m.tag) }
+
+          # Bounded, so that three sealed fields fit below Kafka's message limit.
+          size = length(n)
+          if size > 131072 {
+            n = slice!(n, 0, 131072)
+            truncated = set!(truncated, [name], size)
+          }
+
+          # CTR-BE is standard AES-CTR. Plain AES-256-CTR is a deprecated little-endian variant.
+          iv = random_bytes!(16)
+          iv64 = encode_base64(iv)
+          ct64 = encode_base64(encrypt!(n, "AES-256-CTR-BE", enc_key, iv))
+          aad = encode_json(["siem-d22-v1", "k1", uid, ch, id, rid, name, iv64, ct64])
+          sealed = set!(sealed, [name], {"k": "k1", "iv": iv64, "ct": ct64, "mac": encode_base64(hmac(aad, mac_key, "SHA-256"))})
+          ed = remove!(ed, [name])
+        }
+      }
+
+      .event_data = ed
+      if !is_empty(sealed) { .sealed = sealed }
+      if !is_empty(tags) { .labels.redactions = unique(tags) }
+      if !is_empty(truncated) { .labels.truncated = truncated }
+
+  # Fail closed. Keeps the fact that the event happened, and nothing that could hold a secret.
+  protect_failed:
+    type: remap
+    inputs: ["protect.dropped"]
+    source: |
+      del(.event_data)
+      del(.sealed)
+      del(.xml)
+      del(.message)
+      del(.string_inserts)
+      del(.user_data)
+      del(.metadata)
+      .labels.protection = "d22-v1"
+      .labels.seal_failed = true
+      .labels.event_id_basis = "agent_generated"
+      .labels.source_role = "windows_endpoint"
+      .event_uid = uuid_v4()
+
+  # Whole-event authentication (D24). encode_json sorts keys, so body is canonical, and the MAC
+  # covers those exact bytes. Nothing after this point can change an event undetected.
+  # Must stay the only input to the sink, and the last step before the disk buffer.
+  envelope:
+    type: remap
+    inputs: [protect, protect_failed]
+    drop_on_error: true
+    drop_on_abort: true
+    reroute_dropped: true
+    source: |
+      uid = string!(.event_uid)
+      body = encode_json(.)
+      # librdkafka refuses anything above message.max.bytes, and the disk buffer then loses it.
+      # The body is JSON inside JSON, so its escaped size is what counts.
+      if length(encode_json(body)) > 900000 {
+        .labels.oversized = true
+        .event_data = {}
+        del(.sealed)
+        del(.xml)
+        del(.user_data)
+        body = encode_json(.)
+      }
+      mac = hmac("siem-event-v1|k1|" + body, decode_base16!("SECRET[field_keys.k1_mac]"), "SHA-256")
+      . = {"v": "siem-event-v1", "k": "k1", "event_uid": uid, "body": body, "mac": encode_base64(mac)}
+
+  # Carries no content and no MAC, so the verifier records it as a visible dead letter.
+  envelope_failed:
+    type: remap
+    inputs: ["envelope.dropped"]
+    source: |
+      . = {"v": "siem-event-v1", "failed": true}
+
+sinks:
+  kafka_raw:
+    type: kafka
+    inputs: [envelope, envelope_failed]
+    bootstrap_servers: "127.0.0.1:9092"
+    topic: siem-raw-logs
+    key_field: event_uid
+    compression: lz4
+    healthcheck:
+      enabled: false
+    encoding:
+      codec: json
+    acknowledgements:
+      enabled: true
+    # 0 means never give up. A timed-out send is removed from the disk buffer and lost.
+    message_timeout_ms: 0
+    librdkafka_options:
+      "acks": "all"
+      # A small queue keeps the backlog on disk, where the 1 GiB limit applies.
+      "queue.buffering.max.messages": "2000"
+      "queue.buffering.max.kbytes": "8192"
+    buffer:
+      type: disk
+      max_size: 1073741824
+      when_full: block
+
+  # Counts only. Loopback, so nothing beyond this host can read it.
+  metrics:
+    type: prometheus_exporter
+    inputs: [vector_metrics]
+    address: "127.0.0.1:9598"

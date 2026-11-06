@@ -1,0 +1,9 @@
+[Unit]
+Description=SIEM disk guard
+
+[Service]
+Type=oneshot
+# Non-zero means WARN or worse, and leaves the unit failed so that it shows in systemctl --failed.
+Environment=SIEM_WINDOWS_MONITOR=@SIEM_WINDOWS_MONITOR@
+ExecStart=/usr/bin/python3 /usr/local/lib/siem/siem-disk-guard.py
+SyslogIdentifier=siem-disk-guard

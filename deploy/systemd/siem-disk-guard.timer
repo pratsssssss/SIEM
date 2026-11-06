@@ -1,0 +1,8 @@
+[Unit]
+Description=Runs the SIEM disk guard
+PartOf=siem.target
+
+[Timer]
+OnActiveSec=1min
+OnUnitActiveSec=5min
+Unit=siem-disk-guard.service

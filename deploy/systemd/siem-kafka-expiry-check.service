@@ -1,0 +1,15 @@
+[Unit]
+Description=SIEM Kafka expiry check
+After=kafka.service
+# Never Requires: a monitor must report a stopped Kafka as CHECK_FAILED, not start it.
+
+[Service]
+Type=oneshot
+User=linux
+Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+Environment=KAFKA_HEAP_OPTS=-Xmx128m
+# A single space stops kafka-run-class.sh adding its default unauthenticated JMX connector.
+Environment="KAFKA_JMX_OPTS= "
+# Non-zero means WARN or worse, and leaves the unit failed so that siem-status shows it.
+ExecStart=/usr/bin/python3 /usr/local/lib/siem/siem-kafka-expiry-check.py --publish @SIEM_WINDOWS_MONITOR@/kafka-expiry.json
+SyslogIdentifier=siem-kafka-expiry

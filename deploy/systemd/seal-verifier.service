@@ -1,0 +1,39 @@
+[Unit]
+Description=SIEM seal verifier
+After=network.target opensearch.service kafka.service
+PartOf=siem.target
+
+[Service]
+User=siem-verifier
+Group=siem-verifier
+ExecStart=/opt/seal-verifier/seal-verifier \
+  -keys /home/linux/siem/config/verifier/field-keys.json \
+  -identity-dir /home/linux/siem/data/verifier \
+  -server-cert /home/linux/siem/config/verifier/tls/verifier.crt \
+  -server-key /home/linux/siem/config/verifier/tls/verifier.key \
+  -client-ca /home/linux/siem/config/verifier/tls/vector-ca.crt \
+  -down-cert /home/linux/siem/config/verifier/tls/verifier.crt \
+  -down-key /home/linux/siem/config/verifier/tls/verifier.key \
+  -down-ca /home/linux/siem/config/verifier/tls/vector-ca.crt
+Restart=always
+RestartSec=5
+MemoryMax=512M
+TasksMax=64
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/linux/siem/data/verifier
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=siem.target
