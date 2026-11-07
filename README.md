@@ -2,8 +2,6 @@
 
 A security information and event management pipeline built from the ground up for a single-machine lab. It covers collection on a Windows 11 endpoint and on Linux, tamper-evident transport, normalization to the Elastic Common Schema, rule-based detection, threat-intelligence enrichment, incident correlation, an asset inventory, attack-path reconstruction, pipeline health monitoring, and a hardened analyst dashboard.
 
-This is **Version 1**, a learning and portfolio project. It runs on one Windows 11 machine, with the SIEM services in WSL2 Ubuntu 24.04. It is not a commercial product, and it has been validated on that one machine only. See [Known limitations](#known-limitations).
-
 ![Overview page of the SOC dashboard](docs/images/overview.png)
 
 ## Objectives
